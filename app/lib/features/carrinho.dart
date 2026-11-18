@@ -22,17 +22,24 @@ class Carrinho {
   double noCarrinho(int idProduto) => itens.where((i) => i.idProduto == idProduto).fold(0.0, (a, i) => a + i.qtd);
   double disponivel(Produto p) => r3(p.estoque - noCarrinho(p.id));
 
+  /// Checagens do v1 ao inserir no pedido, na mesma ordem e com as mesmas mensagens. Devolve o erro, ou null.
+  String? validar(Produto p, double? q) {
+    if (q == null || !(q > 0)) return 'Informe uma quantidade maior que zero.';
+    if (!aceitaFracao(p.unidade) && q != q.roundToDouble()) return '${p.nome} é vendido em ${p.unidade}: informe uma quantidade inteira.';
+    final disp = disponivel(p);
+    if (q > disp) return 'Quantidade indisponível em estoque! Disponível: ${quantidade(disp)} ${p.unidade}.';
+    return null;
+  }
+
   /// Inclui o produto (soma se já estiver no carrinho). Devolve a mensagem de erro, ou null.
   String? adicionar(Produto p, double? q) {
-    final erro = erroQuantidade(p.unidade, q, nome: p.nome);
+    final erro = validar(p, q);
     if (erro != null) return erro;
-    final disp = disponivel(p);
-    if (q! > disp) return 'Quantidade indisponível em estoque! Disponível: ${quantidade(disp)} ${p.unidade}.';
     final existente = itens.where((i) => i.idProduto == p.id).firstOrNull;
     if (existente != null) {
-      existente.qtd = r3(existente.qtd + q);
+      existente.qtd = r3(existente.qtd + q!);
     } else {
-      itens.add(ItemCarrinho(p.id, p.nome, p.unidade, p.venda, r3(q)));
+      itens.add(ItemCarrinho(p.id, p.nome, p.unidade, p.venda, r3(q!)));
     }
     return null;
   }
@@ -58,12 +65,12 @@ class Carrinho {
   /// Troco para venda em dinheiro; null se o valor recebido não foi informado.
   double? troco(double? recebido, double total) => recebido == null ? null : r2(recebido - total);
 
-  /// Procura primeiro pelo código exato; depois por parte do nome ou do código.
+  /// Procura primeiro pelo código exato; depois por parte do nome ou do código (em minúsculas, como no v1).
   static List<Produto> buscar(List<Produto> produtos, String termo) {
-    final t = semAcento(termo.trim());
+    final t = termo.trim().toLowerCase();
     if (t.isEmpty) return const [];
-    final exatos = produtos.where((p) => semAcento(p.codigo) == t).toList();
+    final exatos = produtos.where((p) => p.codigo.toLowerCase() == t).toList();
     if (exatos.isNotEmpty) return exatos;
-    return produtos.where((p) => semAcento('${p.nome} ${p.codigo}').contains(t)).toList();
+    return produtos.where((p) => '${p.nome} ${p.codigo}'.toLowerCase().contains(t)).toList();
   }
 }
