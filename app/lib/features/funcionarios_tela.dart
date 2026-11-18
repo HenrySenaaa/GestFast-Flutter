@@ -20,12 +20,14 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
   List<Usuario> _usuarios = [];
   List<Json> _perfis = [];
   bool _falhou = false;
-  int? _perfil;
-  String _status = '';
-  late final _busca = TextEditingController(text: widget.buscaInicial);
+  // v1: os filtros continuavam como estavam ao voltar para a tela.
+  late final _m = (_s.memoria['func'] as Map<String, Object?>?) ?? const {};
+  late int? _perfil = _m['perfil'] as int?;
+  late String _status = (_m['status'] as String?) ?? '';
+  late final _busca = TextEditingController(text: widget.buscaInicial.isNotEmpty ? widget.buscaInicial : (_m['busca'] as String?) ?? '');
   Timer? _espera;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
 
   @override
   void dispose() {
+    _s.memoria['func'] = {'perfil': _perfil, 'status': _status, 'busca': _busca.text};
     _espera?.cancel();
     _busca.dispose();
     super.dispose();
@@ -60,7 +63,7 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
   }
 
   Future<void> _formulario([Usuario? u]) async {
-    final ok = await showDialog<bool>(context: context, builder: (_) => _Formulario(_s, _perfis, u));
+    final ok = await abrirModal<bool>(context, (_) => _Formulario(_s, _perfis, u));
     if (ok == true) await _carregar();
   }
 
@@ -77,7 +80,7 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
   Widget build(BuildContext context) {
     final s = ref.watch(sessaoProvider);
     return Pagina(
-      cabecalho: CabecalhoAba('Funcionários', acoes: [Botao('+ Cadastrar Funcionário', _perfis.isEmpty ? null : () => _formulario())]),
+      cabecalho: CabecalhoAba('Funcionários', acoes: [Botao('+ Cadastrar Funcionário', () => _formulario())]),
       filhos: [
         Cartao(
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -126,7 +129,7 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
                 Coluna(
                   'Ações',
                   (u) => Wrap(children: [
-                    BotaoIcone('✎', 'Alterar dados e perfil', _perfis.isEmpty ? null : () => _formulario(u)),
+                    BotaoIcone('✎', 'Alterar dados e perfil', () => _formulario(u)),
                     u.ativo ? BotaoIcone('⏻', 'Desativar acesso', () => _mudarStatus(u, 'Inativo'), tipo: TipoAcao.cancelar) : BotaoIcone('↺', 'Reativar acesso', () => _mudarStatus(u, 'Ativo'), tipo: TipoAcao.aceitar),
                   ]),
                 ),
@@ -164,6 +167,10 @@ class _FormularioState extends State<_Formulario> {
     super.dispose();
   }
 
+  void _enviarSeLivre() {
+    if (!_ocupado) _enviar();
+  }
+
   Future<void> _enviar() async {
     final novo = widget.usuario == null;
     setState(() {
@@ -186,12 +193,16 @@ class _FormularioState extends State<_Formulario> {
     }
     final corpo = {'nome': _nome.text.trim(), 'email': _email.text.trim(), 'cargo': _cargo.text.trim(), 'id_perfil': _perfil, if (_senha.text.isNotEmpty) 'senha': _senha.text};
     setState(() => _ocupado = true);
-    final r = await tentar(() => novo ? widget.s.api.post('/api/users', corpo) : widget.s.api.put('/api/users/${widget.usuario!.id}', corpo));
-    if (!mounted) return;
-    setState(() => _ocupado = false);
-    if (r != null) {
+    try {
+      final r = await (novo ? widget.s.api.post('/api/users', corpo) : widget.s.api.put('/api/users/${widget.usuario!.id}', corpo));
       avisar(r['message'].toString(), tipo: TipoAviso.sucesso);
-      Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      avisarErro(e);
+      // v1: erro que fala do login (ex.: já cadastrado) marca o campo de e-mail.
+      if (mounted && RegExp('login', caseSensitive: false).hasMatch(e.toString())) setState(() => _erroEmail = true);
+    } finally {
+      if (mounted) setState(() => _ocupado = false);
     }
   }
 
@@ -205,15 +216,16 @@ class _FormularioState extends State<_Formulario> {
         Botao(novo ? 'Cadastrar' : 'Salvar alterações', _ocupado ? null : _enviar),
       ],
       filhos: [
-        Campo(_nome, 'Nome completo *', max: 150, erro: _erroNome),
+        // <form>: Enter em qualquer campo envia, como no v1.
+        Campo(_nome, 'Nome completo *', max: 150, erro: _erroNome, autofoco: true, aoEnviar: (_) => _enviarSeLivre()),
         espacoCampo,
-        Campo(_email, 'Login (e-mail) *', max: 150, erro: _erroEmail),
+        Campo(_email, 'Login (e-mail) *', max: 150, erro: _erroEmail, aoEnviar: (_) => _enviarSeLivre()),
         espacoCampo,
-        Campo(_cargo, 'Cargo', max: 100),
+        Campo(_cargo, 'Cargo', max: 100, aoEnviar: (_) => _enviarSeLivre()),
         espacoCampo,
         Escolha<int>(rotulo: 'Perfil de acesso *', valor: _perfil, opcoes: [for (final p in widget.perfis) DropdownMenuItem(value: (p['id_perfil'] as num).toInt(), child: Text(nomePerfil('${p['nome_perfil']}')))], aoMudar: (v) => setState(() => _perfil = v)),
         espacoCampo,
-        Campo(_senha, novo ? 'Senha inicial * (mínimo 6 caracteres)' : 'Nova senha (deixe em branco para manter)', senha: true, erro: _erroSenha),
+        Campo(_senha, novo ? 'Senha inicial * (mínimo 6 caracteres)' : 'Nova senha (deixe em branco para manter)', senha: true, erro: _erroSenha, aoEnviar: (_) => _enviarSeLivre()),
       ],
     );
   }
