@@ -11,7 +11,7 @@ import '../core/tema.dart';
 import '../models/modelos.dart';
 import '../widgets/comuns.dart';
 
-Future<void> abrirTrocaSenha(BuildContext context, Sessao s) => showDialog<void>(context: context, builder: (_) => _TrocaSenha(s));
+Future<void> abrirTrocaSenha(BuildContext context, Sessao s) => abrirModal<void>(context, (_) => _TrocaSenha(s));
 
 class _TrocaSenha extends StatefulWidget {
   const _TrocaSenha(this.s);
@@ -33,6 +33,7 @@ class _TrocaSenhaState extends State<_TrocaSenha> {
   }
 
   Future<void> _enviar() async {
+    if (_ocupado) return;
     if (_nova.text != _conf.text) {
       avisar('A confirmação não confere com a nova senha.', tipo: TipoAviso.erro);
       return;
@@ -55,9 +56,10 @@ class _TrocaSenhaState extends State<_TrocaSenha> {
           Botao('Salvar senha', _ocupado ? null : _enviar),
         ],
         filhos: [
-          Campo(_atual, 'Senha atual', senha: true, autofill: const [AutofillHints.password]),
+          // <form>: Enter em qualquer campo envia, como no v1.
+          Campo(_atual, 'Senha atual', senha: true, autofoco: true, autofill: const [AutofillHints.password], aoEnviar: (_) => _enviar()),
           espacoCampo,
-          Campo(_nova, 'Nova senha (mínimo 6 caracteres)', senha: true, autofill: const [AutofillHints.newPassword]),
+          Campo(_nova, 'Nova senha (mínimo 6 caracteres)', senha: true, autofill: const [AutofillHints.newPassword], aoEnviar: (_) => _enviar()),
           espacoCampo,
           Campo(_conf, 'Confirmar nova senha', senha: true, autofill: const [AutofillHints.newPassword], aoEnviar: (_) => _enviar()),
         ],
@@ -75,7 +77,7 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
   bool _simCartao = false, _simFornecedor = false, _salvando = false;
   List<Json> _logs = [];
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -118,12 +120,14 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
   }
 
   Future<void> _salvar() async {
+    if (_salvando) return;
     setState(() => _salvando = true);
     final r = await tentar(() => _s.api.put('/api/settings', {
           'estabelecimento': _estab.text,
-          'descontoMaximoPercent': lerNumero(_desconto.text) ?? -1,
-          'intervaloAtualizacaoSeg': lerNumero(_intervalo.text) ?? -1,
-          'diasAlertaValidade': lerNumero(_validade.text) ?? -1,
+          // Como o Number('') do v1: campo vazio vai como 0 (o servidor valida os limites).
+          'descontoMaximoPercent': lerNumero(_desconto.text) ?? 0,
+          'intervaloAtualizacaoSeg': lerNumero(_intervalo.text) ?? 0,
+          'diasAlertaValidade': lerNumero(_validade.text) ?? 0,
           'simularCartaoNegado': _simCartao,
           'simularFornecedorIndisponivel': _simFornecedor,
         }));
@@ -147,15 +151,13 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
   Widget _parametros(Sessao s) {
     final c = s.config;
     if (!s.pode('config:gerir')) {
-      Widget p(String r, String v) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text.rich(TextSpan(style: TextStyle(fontSize: 14.4, color: Cores.texto), children: [TextSpan(text: '$r: ', style: const TextStyle(fontWeight: FontWeight.w700)), TextSpan(text: v)])),
-          );
+      // <p> de 16px, sem margem entre eles (.config-details-list não tem estilo próprio).
+      Widget p(String r, String v) => Text.rich(TextSpan(style: TextStyle(fontSize: 16, color: Cores.texto), children: [TextSpan(text: '$r: ', style: const TextStyle(fontWeight: FontWeight.w700)), TextSpan(text: v)]));
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         p('Estabelecimento', c?.estabelecimento ?? '-'),
         p('Desconto máximo no caixa', '${quantidade(c?.descontoMaximo)}% do subtotal'),
         p('Aviso de validade', '${c?.diasValidade ?? '-'} dia(s) antes de vencer'),
-        Text('Somente o Administrador pode alterar os parâmetros.', style: TextStyle(color: Cores.fraco, fontSize: 14)),
+        Text('Somente o Administrador pode alterar os parâmetros.', style: TextStyle(color: Cores.fraco, fontSize: 16)),
       ]);
     }
     return Align(
@@ -164,16 +166,17 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
       constraints: const BoxConstraints(maxWidth: 640),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SizedBox(height: 8),
-        Campo(_estab, 'Estabelecimento', max: 150),
+        // <form id="form-config">: Enter em qualquer campo salva, como no v1.
+        Campo(_estab, 'Estabelecimento', max: 150, aoEnviar: (_) => _salvar()),
         espacoCampo,
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: Campo(_desconto, 'Desconto máximo no caixa (% do subtotal)', numerico: true)),
+          Expanded(child: Campo(_desconto, 'Desconto máximo no caixa (% do subtotal)', numerico: true, aoEnviar: (_) => _salvar())),
           const SizedBox(width: 10),
-          Expanded(child: Campo(_intervalo, 'Atualização do painel (segundos)', numerico: true)),
+          Expanded(child: Campo(_intervalo, 'Atualização do painel (segundos)', numerico: true, aoEnviar: (_) => _salvar())),
         ]),
         espacoCampo,
         Row(children: [
-          Expanded(child: Campo(_validade, 'Aviso de validade (dias de antecedência)', numerico: true)),
+          Expanded(child: Campo(_validade, 'Aviso de validade (dias de antecedência)', numerico: true, aoEnviar: (_) => _salvar())),
           const SizedBox(width: 10),
           const Expanded(child: SizedBox()),
         ]),
@@ -202,7 +205,8 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
           ),
         ]),
         const SizedBox(height: 12),
-        Botao('💾 Salvar parâmetros', _salvando ? null : _salvar, bloco: true),
+        // .btn sem .btn-block, esticado pelo flex em coluna do .config-form: largura toda e texto à esquerda.
+        Botao('💾 Salvar parâmetros', _salvando ? null : _salvar, esticado: true),
       ]),
       ),
     );
@@ -252,7 +256,7 @@ class _ConfiguracoesTelaState extends ConsumerState<ConfiguracoesTela> {
         if (s.pode('logs:ver'))
           Cartao(
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              TituloCartao('Registro de atividades (logs)', direita: Botao('🔄 Atualizar', _carregarLogs, tipo: TipoBotao.secundario, pequeno: true)),
+              TituloCartao('Registro de atividades (logs)', h3: true, direita: Botao('🔄 Atualizar', _carregarLogs, tipo: TipoBotao.secundario, pequeno: true)),
               Tabela<Json>(
                 itens: _logs,
                 vazio: 'Sem registros.',
