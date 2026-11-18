@@ -25,7 +25,7 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
   String _ultima = 'Última checagem: agora', _intervalo = 'atualização periódica a cada 3s';
   Timer? _relogio;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -135,11 +135,12 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
           decoration: BoxDecoration(color: Cores.perigoClaro, borderRadius: BorderRadius.circular(8)),
           child: const Text('Não foi possível carregar os gráficos no momento. Tente atualizar a página.', style: TextStyle(color: Cores.perigo, fontWeight: FontWeight.w700, fontSize: 14)),
         ),
-      if (d != null) _conteudo(d, s),
+      // Antes da primeira resposta (ou se ela falhar), o v1 já mostra os cartões, com as listas vazias.
+      _conteudo(d ?? const {'validades': {}}, s, carregado: d != null),
     ]);
   }
 
-  Widget _conteudo(Json d, Sessao s) {
+  Widget _conteudo(Json d, Sessao s, {required bool carregado}) {
     final v = Json.from(d['validades'] as Map);
     final itensValidade = listaJson(v['itens']);
     final vencidos = (v['vencidos'] as num?)?.toInt() ?? 0;
@@ -151,7 +152,7 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const TituloCartao('Alertas'),
         _Lista(
-          vazio: const _Linha('Todos os itens com estoque regular', 'OK'),
+          vazio: carregado ? const _Linha('Todos os itens com estoque regular', 'OK') : null,
           linhas: [
             for (final a in listaJson(d['alertas']))
               _Linha(
@@ -173,7 +174,7 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         TituloCartao('Validade', direita: itensValidade.isEmpty ? null : Dica('$vencidos vencido(s) • ${itensValidade.length - vencidos} vencendo em até ${v['dias']} dia(s)')),
         _Lista(
-          vazio: const _Linha('Nenhum produto vencido ou perto de vencer', 'OK'),
+          vazio: carregado ? const _Linha('Nenhum produto vencido ou perto de vencer', 'OK') : null,
           linhas: [
             for (final i in itensValidade)
               _Linha(
@@ -205,7 +206,7 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
                   }, pequeno: true)
                 : null),
         _Lista(
-          vazio: const _Linha('Nenhuma compra recente', ''),
+          vazio: carregado ? const _Linha('Nenhuma compra recente', '') : null,
           linhas: [
             for (final c in listaJson(d['ultimasCompras']))
               _Linha('${c['produto_nome']}', 'x${quantidade(c['quantidade_pedida'])}', dica: '${c['codigo_pedido']} • ${c['fornecedor']} • ${c['situacao']}', aoTocar: () => context.go('/requisicoes?id=${c['id_requisicao']}')),
@@ -276,10 +277,10 @@ class _Linha {
 class _Lista extends StatelessWidget {
   const _Lista({required this.linhas, required this.vazio});
   final List<_Linha> linhas;
-  final _Linha vazio;
+  final _Linha? vazio;
   @override
   Widget build(BuildContext context) {
-    final itens = linhas.isEmpty ? [vazio] : linhas;
+    final itens = linhas.isEmpty ? [?vazio] : linhas;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (var i = 0; i < itens.length; i++) ...[if (i > 0) const SizedBox(height: 8), _LinhaDado(itens[i])],
     ]);
@@ -367,7 +368,7 @@ class _CartaoGrafico extends StatelessWidget {
                       child: Row(children: [
                         Container(width: 12, height: 12, decoration: BoxDecoration(color: Cores.grafico[i % Cores.grafico.length], borderRadius: BorderRadius.circular(2))),
                         const SizedBox(width: 6),
-                        Expanded(child: Text('${dist[i]['categoria']}', style: const TextStyle(fontSize: 14.1, fontWeight: FontWeight.w500, color: Color(0xFF111827)))),
+                        Expanded(child: Text('${dist[i]['categoria']}', style: const TextStyle(fontSize: 14.1, fontWeight: FontWeight.w600, color: Color(0xFF111827)))),
                         Text('${dist[i]['porcentagem']}%', style: const TextStyle(fontSize: 14.1, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                       ]),
                     ),
