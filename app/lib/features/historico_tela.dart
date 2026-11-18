@@ -24,7 +24,7 @@ class _HistoricoTelaState extends ConsumerState<HistoricoTela> {
   late final _busca = TextEditingController(text: widget.busca ?? '');
   Timer? _espera;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -39,11 +39,30 @@ class _HistoricoTelaState extends ConsumerState<HistoricoTela> {
     super.dispose();
   }
 
+  @override
+  void deactivate() {
+    _s.memoria['hist'] = {'de': _de, 'ate': _ate, 'busca': _busca.text, 'status': _status};
+    super.deactivate();
+  }
+
   Future<void> _iniciar() async {
-    await _s.sincronizar();
-    final dia = widget.dia ?? _s.hojeOuAparelho;
-    _de = dia;
-    _ate = dia;
+    final m = _s.memoria['hist'] as Map<String, Object?>?;
+    if (widget.dia != null) {
+      // Vindo da busca do topo: o dia da venda, o código e todas as situações.
+      _de = _ate = widget.dia!;
+      _status = '';
+    } else {
+      await _s.sincronizar();
+      // v1: os filtros continuavam como estavam ao voltar; na primeira vez, o dia de hoje (do servidor).
+      if (m != null) {
+        _de = m['de'] as String;
+        _ate = m['ate'] as String;
+        _status = m['status'] as String;
+        _busca.text = m['busca'] as String;
+      }
+      if (_de.isEmpty) _de = _ate = _s.hojeOuAparelho;
+    }
+    if (mounted) setState(() {});
     await _carregar();
     final id = widget.vendaId;
     if (id != null && mounted) {
@@ -65,15 +84,15 @@ class _HistoricoTelaState extends ConsumerState<HistoricoTela> {
     }
   }
 
-  Future<void> _detalhes(Venda v) => showDialog<void>(context: context, builder: (c) => _Detalhes(v));
+  Future<void> _detalhes(Venda v) => abrirModal<void>(context, (c) => _Detalhes(v));
 
   Future<void> _editar(Venda v) async {
-    final ok = await showDialog<bool>(context: context, builder: (_) => _Editar(_s, v));
+    final ok = await abrirModal<bool>(context, (_) => _Editar(_s, v));
     if (ok == true) await _carregar();
   }
 
   Future<void> _autorizar(Venda v, {required bool excluir}) async {
-    final ok = await showDialog<bool>(context: context, builder: (_) => _Autorizacao(_s, v, excluir));
+    final ok = await abrirModal<bool>(context, (_) => _Autorizacao(_s, v, excluir));
     if (ok == true) await _carregar();
   }
 
@@ -133,8 +152,9 @@ class _HistoricoTelaState extends ConsumerState<HistoricoTela> {
                 Coluna('Operador', (v) => Text(v.usuario), flex: 3),
                 Coluna('Pagamento', (v) => Text(v.forma), flex: 3),
                 Coluna('Itens', (v) => Text(v.itens.map((i) => '${i.nome} x${quantidade(i.quantidade)}').join(', '), style: const TextStyle(fontSize: 13.1)), flex: 6),
-                Coluna('Total', (v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(dinheiro(v.total)), if (v.desconto > 0) Pequeno('desc. ${dinheiro(v.desconto)}')]), flex: 3),
-                Coluna('Situação', (v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [seloVenda(v.status), if (v.dataEdicao.isNotEmpty) const Pequeno('editada')]), flex: 3),
+                // <small class="muted">
+                Coluna('Total', (v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(dinheiro(v.total)), if (v.desconto > 0) Pequeno('desc. ${dinheiro(v.desconto)}', cor: const Color(0xFF52525B))]), flex: 3),
+                Coluna('Situação', (v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [seloVenda(v.status), if (v.dataEdicao.isNotEmpty) const Pequeno('editada', cor: Color(0xFF52525B))]), flex: 3),
                 Coluna(
                   'Ações',
                   (v) => Wrap(children: [
@@ -163,7 +183,8 @@ class _Detalhes extends StatelessWidget {
         largo: true,
         acaoUnica: Botao('Fechar', () => Navigator.pop(context), tipo: TipoBotao.secundario, bloco: true),
         filhos: [
-          Text('${dataBR(v.data)} • Operador: ${v.usuario} • ${v.forma}${v.nsu.isNotEmpty ? ' • NSU ${v.nsu}' : ''}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 14)),
+          // <p class="muted">: 16px
+          Text('${dataBR(v.data)} • Operador: ${v.usuario} • ${v.forma}${v.nsu.isNotEmpty ? ' • NSU ${v.nsu}' : ''}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 16)),
           Tabela<ItemVenda>(itens: v.itens, larguraMinima: 480, colunas: [
             Coluna('Produto', (i) => Text(i.nome), flex: 4),
             Coluna('Valor', (i) => Text(num2(i.valorUnitario))),
@@ -188,7 +209,7 @@ class _Detalhes extends StatelessWidget {
                 Text(v.motivoCancelamento, style: const TextStyle(fontStyle: FontStyle.italic, color: Color(0xFF1F2937), height: 1.45, fontSize: 14)),
               ]),
             ),
-          if (v.dataEdicao.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('Editada em ${dataBR(v.dataEdicao)} por ${v.editadaPor}.', style: const TextStyle(color: Color(0xFF52525B), fontSize: 14))),
+          if (v.dataEdicao.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('Editada em ${dataBR(v.dataEdicao)} por ${v.editadaPor}.', style: const TextStyle(color: Color(0xFF52525B), fontSize: 16))),
         ],
       );
 }
@@ -252,7 +273,7 @@ class _EditarState extends State<_Editar> {
         Botao('Salvar alterações', _ocupado ? null : _salvar),
       ],
       filhos: [
-        const Text('Altere as quantidades. O estoque e o total serão recalculados. Use 0 para remover um item (a venda precisa manter ao menos um).', style: TextStyle(color: Color(0xFF52525B), fontSize: 14)),
+        const Text('Altere as quantidades. O estoque e o total serão recalculados. Use 0 para remover um item (a venda precisa manter ao menos um).', style: TextStyle(color: Color(0xFF52525B), fontSize: 16)),
         Tabela<ItemVenda>(itens: v.itens, larguraMinima: 480, colunas: [
           Coluna('Produto', (i) => Text(i.nome), flex: 4),
           Coluna('Valor', (i) => Text(num2(i.valorUnitario))),
@@ -353,17 +374,22 @@ class _AutorizacaoState extends State<_Autorizacao> {
                 ])),
         ),
         if (!excluir) ...[Campo(_motivo, 'Motivo * (10 a 5000 caracteres)', linhas: 3, max: 5000, erro: _erroMotivo), espacoCampo],
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(color: const Color(0xFFFAFAFA), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF9CA3AF))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('Autorização ${excluir ? 'do Administrador' : 'de gerente'}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-            espacoCampo,
-            Campo(_email, 'E-mail do ${excluir ? 'administrador' : 'gerente (Administrador ou BackOffice)'}'),
-            espacoCampo,
-            Campo(_senha, 'Senha', senha: true, erro: _erroSenha, aoEnviar: (_) => _enviar()),
-          ]),
+        // .auth-box: borda tracejada, fundo #fafafa
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: BordaTracejada(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(color: const Color(0xFFFAFAFA), borderRadius: BorderRadius.circular(8)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('Autorização ${excluir ? 'do Administrador' : 'de gerente'}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF111827))),
+                espacoCampo,
+                Campo(_email, 'E-mail do ${excluir ? 'administrador' : 'gerente (Administrador ou BackOffice)'}'),
+                espacoCampo,
+                Campo(_senha, 'Senha', senha: true, erro: _erroSenha),
+              ]),
+            ),
+          ),
         ),
       ],
     );
