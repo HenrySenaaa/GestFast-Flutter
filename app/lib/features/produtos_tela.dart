@@ -357,7 +357,7 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
               Coluna(
                 'Ações',
                 (p) => p.ativo
-                    ? Wrap(children: [BotaoIcone(Icons.edit, 'Alterar produto', () => _preencher(p)), BotaoIcone(Icons.delete_outline, 'Inativar produto', () => _mudarStatus(p, 'Inativo'), tipo: TipoAcao.cancelar)])
+                    ? Wrap(spacing: 4, runSpacing: 2, children: [Botao('✏️', () => _preencher(p), tipo: TipoBotao.secundario, pequeno: true, dica: 'Alterar produto'), Botao('🗑️', () => _mudarStatus(p, 'Inativo'), tipo: TipoBotao.perigo, pequeno: true, dica: 'Inativar produto')])
                     : Botao('↺ Reativar', () => _mudarStatus(p, 'Ativo'), tipo: TipoBotao.secundario, pequeno: true),
                 flex: 4,
               ),

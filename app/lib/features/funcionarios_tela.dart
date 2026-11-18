@@ -126,8 +126,8 @@ class _FuncionariosTelaState extends ConsumerState<FuncionariosTela> {
                 Coluna(
                   'Ações',
                   (u) => Wrap(children: [
-                    BotaoIcone(Icons.edit, 'Alterar dados e perfil', _perfis.isEmpty ? null : () => _formulario(u)),
-                    u.ativo ? BotaoIcone(Icons.power_settings_new, 'Desativar acesso', () => _mudarStatus(u, 'Inativo'), tipo: TipoAcao.cancelar) : BotaoIcone(Icons.replay, 'Reativar acesso', () => _mudarStatus(u, 'Ativo'), tipo: TipoAcao.aceitar),
+                    BotaoIcone('✎', 'Alterar dados e perfil', _perfis.isEmpty ? null : () => _formulario(u)),
+                    u.ativo ? BotaoIcone('⏻', 'Desativar acesso', () => _mudarStatus(u, 'Inativo'), tipo: TipoAcao.cancelar) : BotaoIcone('↺', 'Reativar acesso', () => _mudarStatus(u, 'Ativo'), tipo: TipoAcao.aceitar),
                   ]),
                 ),
               ],

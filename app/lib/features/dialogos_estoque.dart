@@ -199,7 +199,7 @@ class EditorLinhas extends StatelessWidget {
             SizedBox(
               width: 34,
               child: linhas.length > 1
-                  ? BotaoIcone(Icons.close, 'Remover linha', () {
+                  ? BotaoIcone('✕', 'Remover linha', () {
                       linhas.removeAt(i);
                       aoMudar();
                     }, tipo: TipoAcao.cancelar)

@@ -333,7 +333,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
         Coluna('Valor', (i) => Text(num2(i.preco))),
         Coluna('Quant.', (i) => Text('${quantidade(i.qtd)} ${i.unidade}')),
         Coluna('Total', (i) => Text(num2(i.subtotal))),
-        Coluna('Remover', (i) => BotaoIcone(Icons.delete_outline, 'Remover ${i.nome}', () => setState(() {
+        Coluna('Remover', (i) => BotaoIcone('🗑', 'Remover item', () => setState(() {
               _carrinho.itens.remove(i);
               _selecionado = null;
             }), tipo: TipoAcao.cancelar)),

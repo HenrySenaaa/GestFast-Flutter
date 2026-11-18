@@ -47,10 +47,8 @@ class _GestFastAppState extends State<GestFastApp> {
           supportedLocales: const [Locale('pt', 'BR')],
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           routerConfig: _rotas,
-          builder: (context, filho) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(widget.sessao.zoom)),
-            child: CamadaAvisos(child: filho ?? const SizedBox.shrink()),
-          ),
+          // A-/A+ do v1 aplicam zoom na página inteira (CSS zoom), não só no texto.
+          builder: (context, filho) => Zoom(fator: widget.sessao.zoom, child: CamadaAvisos(child: filho ?? const SizedBox.shrink())),
         ),
       );
 }

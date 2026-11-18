@@ -110,9 +110,9 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
   Widget _acoes(Requisicao r, Sessao s) {
     if (!r.aberta) return const Text('Concluído', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)));
     return Wrap(children: [
-      if (s.pode('requisicoes:receber')) BotaoIcone(Icons.check, 'Confirmar e Receber Mercadoria (Entrada no Estoque)', () => _receber(r), tipo: TipoAcao.aceitar),
-      if (s.pode('requisicoes:avancar') && r.situacao != 'AF Gerada') BotaoIcone(Icons.arrow_forward, r.situacao == 'Em Aberto' ? 'Marcar como cotado' : 'Gerar AF', () => _avancar(r), tipo: TipoAcao.avancar),
-      if (s.pode('requisicoes:cancelar')) BotaoIcone(Icons.close, 'Cancelar Requisição', () => _cancelar(r), tipo: TipoAcao.cancelar),
+      if (s.pode('requisicoes:receber')) BotaoIcone('✔', 'Confirmar e Receber Mercadoria (Entrada no Estoque)', () => _receber(r), tipo: TipoAcao.aceitar),
+      if (s.pode('requisicoes:avancar') && r.situacao != 'AF Gerada') BotaoIcone('➜', r.situacao == 'Em Aberto' ? 'Marcar como cotado' : 'Gerar AF', () => _avancar(r), tipo: TipoAcao.avancar),
+      if (s.pode('requisicoes:cancelar')) BotaoIcone('✕', 'Cancelar Requisição', () => _cancelar(r), tipo: TipoAcao.cancelar),
     ]);
   }
 

@@ -138,10 +138,10 @@ class _HistoricoTelaState extends ConsumerState<HistoricoTela> {
                 Coluna(
                   'Ações',
                   (v) => Wrap(children: [
-                    BotaoIcone(Icons.visibility, 'Ver detalhes', () => _detalhes(v)),
-                    if (v.concluida && s.pode('vendas:editar')) BotaoIcone(Icons.edit, 'Editar quantidades', () => _editar(v), tipo: TipoAcao.avancar),
-                    if (v.concluida && s.pode('vendas:cancelar')) BotaoIcone(Icons.close, 'Cancelar venda', () => _autorizar(v, excluir: false), tipo: TipoAcao.cancelar),
-                    if (s.pode('vendas:excluir')) BotaoIcone(Icons.delete_outline, 'Excluir registro', () => _autorizar(v, excluir: true), tipo: TipoAcao.lixeira),
+                    BotaoIcone('👁', 'Ver detalhes', () => _detalhes(v)),
+                    if (v.concluida && s.pode('vendas:editar')) BotaoIcone('✎', 'Editar quantidades', () => _editar(v), tipo: TipoAcao.avancar),
+                    if (v.concluida && s.pode('vendas:cancelar')) BotaoIcone('✕', 'Cancelar venda', () => _autorizar(v, excluir: false), tipo: TipoAcao.cancelar),
+                    if (s.pode('vendas:excluir')) BotaoIcone('🗑', 'Excluir registro', () => _autorizar(v, excluir: true), tipo: TipoAcao.lixeira),
                   ]),
                   flex: 5,
                 ),
