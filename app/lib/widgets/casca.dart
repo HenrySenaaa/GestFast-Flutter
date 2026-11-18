@@ -12,6 +12,7 @@ import '../core/sessao.dart';
 import '../core/tema.dart';
 import '../features/configuracoes_tela.dart';
 import '../models/modelos.dart';
+import 'comuns.dart';
 
 /// .gestfast-logo: GEST e FAST# em duas linhas
 class Logo extends StatelessWidget {
@@ -26,26 +27,33 @@ class Logo extends StatelessWidget {
       ]);
 }
 
+/// .nav-icon-circle-btn (hover: fundo #eff6ff e escala 1.04)
 class _BotaoCirculo extends StatelessWidget {
-  const _BotaoCirculo({required this.filho, required this.dica, required this.aoClicar});
+  const _BotaoCirculo({required this.filho, required this.dica, required this.aoClicar, this.rotulo});
   final Widget filho;
   final String dica;
+  final String? rotulo;
   final VoidCallback aoClicar;
   @override
   Widget build(BuildContext context) => Tooltip(
         message: dica,
         child: Semantics(
           button: true,
-          label: dica,
-          child: InkWell(
-            onTap: aoClicar,
-            customBorder: const CircleBorder(),
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Cores.bordaBusca, width: 1.5)),
-              child: filho,
+          label: rotulo ?? dica,
+          child: Pairar(
+            builder: (context, sobre) => Transform.scale(
+              scale: sobre ? 1.04 : 1,
+              child: InkWell(
+                onTap: aoClicar,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: sobre ? const Color(0xFFEFF6FF) : Colors.white, shape: BoxShape.circle, border: Border.all(color: Cores.bordaBusca, width: 1.5)),
+                  child: filho,
+                ),
+              ),
             ),
           ),
         ),
@@ -84,7 +92,7 @@ class _CascaState extends ConsumerState<Casca> {
   int _ativo = 0, _seq = 0;
   Timer? _espera;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -112,6 +120,11 @@ class _CascaState extends ConsumerState<Casca> {
   // "/" fora de um campo de texto, ou Ctrl+K em qualquer lugar, foca a busca.
   bool _atalhos(KeyEvent e) {
     if (e is! KeyDownEvent) return false;
+    // Esc fecha o menu do usuário (v1: keydown Escape no document).
+    if (e.logicalKey == LogicalKeyboardKey.escape && _menuAberto) {
+      setState(() => _menuAberto = false);
+      return false;
+    }
     final t = HardwareKeyboard.instance;
     final ctrlK = (t.isControlPressed || t.isMetaPressed) && e.logicalKey == LogicalKeyboardKey.keyK;
     if (ctrlK || (e.character == '/' && !_digitando())) {
@@ -219,9 +232,10 @@ class _CascaState extends ConsumerState<Casca> {
     final itens = _grupos(_s).expand((g) => g.itens).toList();
     final ultimo = itens.isEmpty ? 0 : itens.length - 1;
     if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+      // Com a lista fechada, a seta só abre a lista (como no v1).
       setState(() {
+        if (_buscaAberta) _ativo = (_ativo + 1).clamp(0, ultimo);
         _buscaAberta = true;
-        _ativo = (_ativo + 1).clamp(0, ultimo);
       });
       return KeyEventResult.handled;
     }
@@ -272,7 +286,8 @@ class _CascaState extends ConsumerState<Casca> {
       key: _chaveScaffold,
       backgroundColor: Cores.pagina,
       drawerScrimColor: const Color(0x73000000),
-      drawer: largo ? null : Drawer(width: 250, backgroundColor: Cores.pagina, shape: const RoundedRectangleBorder(), child: SafeArea(child: _Menu(atual: atual, sessao: sessao, aoEscolher: () => Navigator.of(context).maybePop()))),
+      // Até 900px: .sidebar fixa com 250px de largura e padding-top de 70px.
+      drawer: largo ? null : Drawer(width: 250, backgroundColor: Cores.pagina, shape: const RoundedRectangleBorder(), child: SafeArea(child: _Menu(atual: atual, sessao: sessao, topo: 70, aoEscolher: () => Navigator.of(context).maybePop()))),
       body: SafeArea(
         child: Stack(key: _pilha, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -309,7 +324,7 @@ class _CascaState extends ConsumerState<Casca> {
   Widget _cabecalho(Sessao s, bool largo) {
     final esquerda = Row(mainAxisSize: MainAxisSize.min, children: [
       if (!largo) ...[
-        _BotaoCirculo(filho: const Icon(Icons.menu, size: 18, color: Colors.black87), dica: 'Abrir menu', aoClicar: () => _chaveScaffold.currentState?.openDrawer()),
+        _BotaoCirculo(filho: const Text('☰', style: TextStyle(fontSize: 16, color: Colors.black)), dica: 'Menu', rotulo: 'Abrir menu', aoClicar: () => _chaveScaffold.currentState?.openDrawer()),
         const SizedBox(width: 16),
       ],
       Tooltip(message: 'Ir para o Início', child: InkWell(onTap: () => context.go('/painel'), child: const Logo())),
@@ -322,15 +337,19 @@ class _CascaState extends ConsumerState<Casca> {
       child: Semantics(
         button: true,
         label: 'Menu do usuário',
-        child: InkWell(
+        child: Pairar(
+          builder: (context, sobre) => InkWell(
           key: _chaveUsuario,
           borderRadius: BorderRadius.circular(12),
           onTap: () => setState(() => _menuAberto = !_menuAberto),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: _menuAberto ? const Color(0x12000000) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: _menuAberto || sobre ? const Color(0x12000000) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 38, height: 38, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle), child: const Text('👤', style: TextStyle(fontSize: 18.4))),
+              Tooltip(
+                message: u == null ? '-' : '${u.nome} (${nomePerfil(u.perfil)})',
+                child: Container(width: 38, height: 38, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle), child: const Text('👤', style: TextStyle(fontSize: 18.4))),
+              ),
               if (largo) ...[
                 const SizedBox(width: 10),
                 Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -339,6 +358,7 @@ class _CascaState extends ConsumerState<Casca> {
                 ]),
               ],
             ]),
+          ),
           ),
         ),
       ),
@@ -402,17 +422,24 @@ class _CascaState extends ConsumerState<Casca> {
             ),
           ]),
         ),
-        if (q.isNotEmpty)
-          Semantics(
-            button: true,
-            label: 'Limpar pesquisa',
-            child: InkWell(
-              onTap: () {
-                _texto.clear();
-                _digitou('');
-                _foco.requestFocus();
-              },
-              child: const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.close, size: 16, color: Color(0xFF9CA3AF))),
+        // .clear-btn: × de 1.2rem, aparece quando há texto (sem contar espaços).
+        if (q.trim().isNotEmpty)
+          Tooltip(
+            message: 'Limpar pesquisa',
+            child: Semantics(
+              button: true,
+              label: 'Limpar pesquisa',
+              excludeSemantics: true,
+              child: Pairar(
+                builder: (context, sobre) => InkWell(
+                  onTap: () {
+                    _texto.clear();
+                    _digitou('');
+                    _foco.requestFocus();
+                  },
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Text('×', style: TextStyle(fontSize: 19.2, height: 1, color: sobre ? const Color(0xFF374151) : const Color(0xFF9CA3AF)))),
+                ),
+              ),
             ),
           ),
       ]),
@@ -552,23 +579,28 @@ class _CascaState extends ConsumerState<Casca> {
     final caixa = _retangulo(_chaveUsuario);
     if (caixa == null) return const SizedBox.shrink();
     final largura = MediaQuery.sizeOf(context).width;
-    Widget item(String rotulo, VoidCallback acao, {Widget? icone, bool perigo = false}) => Semantics(
+    // .user-menu > button: hover #eff6ff; o "Sair" (.danger) tem linha em cima e só os cantos de baixo arredondados.
+    Widget item(String rotulo, VoidCallback acao, {bool perigo = false}) => Semantics(
           button: true,
           label: rotulo,
           excludeSemantics: true,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              setState(() => _menuAberto = false);
-              acao();
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(11),
-              child: Row(children: [
-                ?icone,
-                if (icone != null) const SizedBox(width: 6),
-                Flexible(child: Text(rotulo, style: TextStyle(fontSize: 14.1, color: perigo ? Cores.perigo : const Color(0xFF1E293B), fontWeight: perigo ? FontWeight.w700 : FontWeight.w400))),
-              ]),
+          child: Pairar(
+            builder: (context, sobre) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                setState(() => _menuAberto = false);
+                acao();
+              },
+              child: Container(
+                margin: EdgeInsets.only(top: perigo ? 4 : 0),
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: sobre ? const Color(0xFFEFF6FF) : null,
+                  border: perigo ? const Border(top: BorderSide(color: Color(0xFFE2E8F0))) : null,
+                  borderRadius: perigo ? null : BorderRadius.circular(8),
+                ),
+                child: Text(rotulo, style: TextStyle(fontSize: 14.1, color: perigo ? Cores.perigo : const Color(0xFF1E293B), fontWeight: perigo ? FontWeight.w700 : FontWeight.w400)),
+              ),
             ),
           ),
         );
@@ -578,14 +610,18 @@ class _CascaState extends ConsumerState<Casca> {
             button: true,
             label: dica,
             excludeSemantics: true,
-            child: InkWell(
-              onTap: f,
-              child: Container(
-                constraints: const BoxConstraints(minWidth: 34),
-                height: 30,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: Colors.white, border: Border.all(color: const Color(0xFF9CA3AF)), borderRadius: BorderRadius.circular(4)),
-                child: Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13.6, color: Colors.black)),
+            // .a11y-btn:hover { background: #1f2429; color: #fff }
+            child: Pairar(
+              builder: (context, sobre) => InkWell(
+                onTap: f,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 34),
+                  height: 30,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: sobre ? Cores.escuro : Colors.white, border: Border.all(color: const Color(0xFF9CA3AF)), borderRadius: BorderRadius.circular(4)),
+                  child: Text(t, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13.6, color: sobre ? Colors.white : Colors.black)),
+                ),
               ),
             ),
           ),
@@ -602,7 +638,7 @@ class _CascaState extends ConsumerState<Casca> {
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            item('Alterar minha senha', () => abrirTrocaSenha(context, s), icone: const Text('🔑', style: TextStyle(fontSize: 14))),
+            item('🔑 Alterar minha senha', () => abrirTrocaSenha(context, s)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(children: [
@@ -612,9 +648,8 @@ class _CascaState extends ConsumerState<Casca> {
                 a11y('A+', 'Aumentar tamanho do texto', () => s.mudarZoom(1)),
               ]),
             ),
-            item('Alto contraste', s.alternarContraste, icone: const Icon(Icons.contrast, size: 14, color: Colors.black)),
-            const Divider(height: 8, color: Color(0xFFE2E8F0)),
-            item('Sair do sistema', s.sair, icone: const Icon(Icons.power_settings_new, size: 15, color: Cores.perigo), perigo: true),
+            item('◐ Alto contraste', s.alternarContraste),
+            item('⏻ Sair do sistema', s.sair, perigo: true),
           ]),
         ),
       ),
@@ -649,16 +684,17 @@ class _StatusBusca extends StatelessWidget {
 }
 
 class _Menu extends StatelessWidget {
-  const _Menu({required this.atual, required this.sessao, this.aoEscolher});
+  const _Menu({required this.atual, required this.sessao, this.aoEscolher, this.topo = 20});
   final String atual;
   final Sessao sessao;
   final VoidCallback? aoEscolher;
+  final double topo;
 
   @override
   Widget build(BuildContext context) {
     final permitidos = destinos.where((d) => d.perm == null || sessao.pode(d.perm!)).toList();
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 10),
+      padding: EdgeInsets.only(top: topo, bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
@@ -716,8 +752,8 @@ class _ItemMenuState extends State<_ItemMenu> {
             onTap: widget.aoClicar,
             child: Container(
               color: fundo,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text(widget.d.rotulo, style: TextStyle(fontSize: secundario ? 14.4 : 16.8, fontWeight: widget.ativo ? FontWeight.w900 : FontWeight.w500, color: cor)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 9),
+              child: Text(widget.d.rotulo, style: TextStyle(fontSize: secundario ? 14.4 : 16.8, fontWeight: widget.ativo ? FontWeight.w800 : FontWeight.w500, color: cor)),
             ),
           ),
         ),
