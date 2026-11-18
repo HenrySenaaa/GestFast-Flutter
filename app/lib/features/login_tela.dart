@@ -27,8 +27,9 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
   late final _codigo = TextEditingController(text: widget.codigoRedefinicao);
   final _nova = TextEditingController();
   final _nova2 = TextEditingController();
-  bool _lembrar = false, _ocupado = false;
+  bool _lembrar = false, _ocupado = false, _erroEmail = false, _erroSenha = false;
   String? _erro, _sucesso;
+  final _focoSenha = FocusNode();
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
     for (final c in [_email, _senha, _servidor, _codigo, _nova, _nova2]) {
       c.dispose();
     }
+    _focoSenha.dispose();
     super.dispose();
   }
 
@@ -63,14 +65,20 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
       _mensagem(erro: e.message);
     } catch (e) {
       _mensagem(erro: e.toString());
+      // v1: a senha é apagada e o cursor volta para ela.
       _senha.clear();
+      if (_painel == _Painel.login) _focoSenha.requestFocus();
     } finally {
       if (mounted) setState(() => _ocupado = false);
     }
   }
 
   Future<void> _entrar() async {
-    if (_email.text.trim().isEmpty || _senha.text.isEmpty) {
+    setState(() {
+      _erroEmail = _email.text.trim().isEmpty;
+      _erroSenha = !_erroEmail && _senha.text.isEmpty;
+    });
+    if (_erroEmail || _erroSenha) {
       _mensagem(erro: 'Preencha o e-mail e a senha para continuar.');
       return;
     }
@@ -78,10 +86,9 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
   }
 
   Future<void> _esqueci() async {
-    if (_email.text.trim().isEmpty) {
-      _mensagem(erro: 'Informe o e-mail cadastrado.');
-      return;
-    }
+    // v1: e-mail vazio só marca o campo em vermelho, sem mensagem.
+    setState(() => _erroEmail = _email.text.trim().isEmpty);
+    if (_erroEmail) return;
     await _rodar((s) async {
       final r = await s.api.post('/api/auth/forgot', {'email': _email.text.trim()});
       _mensagem(sucesso: r['message'].toString());
@@ -169,9 +176,9 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
 
   List<Widget> _formLogin() => [
         ..._campoServidor(),
-        Campo(_email, 'E-mail', dica: 'seu@email.com', autofill: const [AutofillHints.username], aoEnviar: (_) => _entrar()),
+        Campo(_email, 'E-mail', dica: 'seu@email.com', autofoco: true, erro: _erroEmail, autofill: const [AutofillHints.username], aoEnviar: (_) => _entrar()),
         espacoCampo,
-        Campo(_senha, 'Senha', dica: 'Sua senha', senha: true, autofill: const [AutofillHints.password], aoEnviar: (_) => _entrar()),
+        Campo(_senha, 'Senha', dica: 'Sua senha', senha: true, foco: _focoSenha, erro: _erroSenha, autofill: const [AutofillHints.password], aoEnviar: (_) => _entrar()),
         const SizedBox(height: 14),
         Marcador('Manter-me conectado', valor: _lembrar, aoMudar: (v) => setState(() => _lembrar = v)),
         const SizedBox(height: 12),
@@ -186,7 +193,7 @@ class _LoginTelaState extends ConsumerState<LoginTela> {
   List<Widget> _formEsqueci() => [
         const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Informe o e-mail cadastrado. Enviaremos um link para redefinir sua senha.', style: TextStyle(fontSize: 13.6, color: Color(0xFF52525B)))),
         ..._campoServidor(),
-        Campo(_email, 'E-mail cadastrado', dica: 'seu@email.com', aoEnviar: (_) => _esqueci()),
+        Campo(_email, 'E-mail cadastrado', dica: 'seu@email.com', autofoco: true, erro: _erroEmail, aoEnviar: (_) => _esqueci()),
         espacoCampo,
         ..._mensagens(),
         Botao('Enviar link de redefinição', _ocupado ? null : _esqueci, bloco: true),
@@ -220,6 +227,6 @@ class _Faixa extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(color: fundo, borderRadius: BorderRadius.circular(4)),
-        child: Text(texto, style: TextStyle(color: cor, fontSize: 13.4, fontWeight: FontWeight.w500)),
+        child: Text(texto, style: TextStyle(color: cor, fontSize: 13.4, fontWeight: FontWeight.w600)),
       );
 }
