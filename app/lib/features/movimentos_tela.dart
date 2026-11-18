@@ -19,7 +19,7 @@ class _MovimentosTelaState extends ConsumerState<MovimentosTela> {
   List<Movimentacao> _movs = [];
   bool _falhou = false;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
   bool get _saida => widget.tipo == 'Saída';
 
   @override
@@ -48,7 +48,8 @@ class _MovimentosTelaState extends ConsumerState<MovimentosTela> {
       avisar('Não há produtos ativos cadastrados.', tipo: TipoAviso.erro);
       return;
     }
-    final ok = await showDialog<bool>(context: context, builder: (_) => _Registro(_s, widget.tipo, produtos));
+    // Modal fixo do index.html do v1: não fecha com Esc nem com clique fora.
+    final ok = await abrirModal<bool>(context, (_) => _Registro(_s, widget.tipo, produtos), estatico: true);
     if (ok == true) await _carregar();
   }
 
@@ -79,7 +80,8 @@ class _MovimentosTelaState extends ConsumerState<MovimentosTela> {
               Coluna('Unidade R\$', (m) => Text(num2(m.valorUnitario))),
               Coluna('Total R\$', (m) => Text(num2(m.valorTotal))),
               Coluna('Responsável', (m) => Text(m.usuario), flex: 3),
-              Coluna(_saida ? 'Motivo / Observação' : 'Origem / Fornecedor', (m) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [if (m.origem == 'perda') Selo.alerta('Perda: ${m.motivoPerda}'), if (m.observacao.isNotEmpty) Text(m.observacao)]), flex: 5),
+              // Selo de perda na mesma linha do texto, como no v1.
+              Coluna(_saida ? 'Motivo / Observação' : 'Origem / Fornecedor', (m) => Text.rich(TextSpan(children: [if (m.origem == 'perda') ...[WidgetSpan(alignment: PlaceholderAlignment.middle, child: Selo.alerta('Perda: ${m.motivoPerda}')), const TextSpan(text: ' ')], TextSpan(text: m.observacao)])), flex: 5),
             ],
           ),
         ),
@@ -109,8 +111,12 @@ class _RegistroState extends State<_Registro> {
   }
 
   Future<void> _enviar() async {
+    setState(() => _erroObs = false);
     final itens = lerLinhas(_linhas, widget.produtos);
-    if (itens == null) return;
+    if (itens == null) {
+      setState(() {});
+      return;
+    }
     final obs = _obs.text.trim();
     if (obs.length < 10) {
       setState(() => _erroObs = true);
@@ -138,7 +144,7 @@ class _RegistroState extends State<_Registro> {
         Botao('Registrar Movimentação', _ocupado ? null : _enviar, tipo: saida ? TipoBotao.perigo : TipoBotao.primario),
       ],
       filhos: [
-        EditorLinhas(linhas: _linhas, produtos: widget.produtos, aoMudar: () => setState(() {})),
+        EditorLinhas(linhas: _linhas, produtos: widget.produtos, aoMudar: () => setState(() {}), aoDigitar: () => setState(() {}), aoEnviar: _ocupado ? null : _enviar),
         espacoCampo,
         Campo(_obs, 'Motivo / Justificativa * (Mínimo 10, Máximo 5000 caracteres)', dica: 'Descreva o motivo da saída ou entrada...', linhas: 3, max: 5000, minContador: 10, erro: _erroObs),
       ],
