@@ -30,14 +30,51 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
   List<Produto> _lista = [];
   bool _falhou = false, _salvando = false, _erroNome = false, _erroVenda = false, _erroEstMin = false, _erroEstAtual = false, _erroDesc = false;
   Timer? _espera;
+  final _chaveFormulario = GlobalKey();
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
     super.initState();
     _categoria = _s.categorias.firstOrNull?.id;
+    _restaurar();
     _iniciar();
+  }
+
+  List<TextEditingController> get _camposForm => [_nome, _codigo, _custo, _min, _max, _venda, _estMin, _estAtual, _peso, _lote, _desc];
+
+  // v1: ao voltar para a tela, os filtros do catálogo continuavam e o produto em edição seguia no formulário,
+  // com o que já tinha sido digitado (sem edição, o formulário era limpo).
+  void _restaurar() {
+    final m = _s.memoria;
+    _busca.text = (m['prod.busca'] as String?) ?? '';
+    _filtroCategoria = m['prod.categoria'] as int?;
+    _status = (m['prod.status'] as String?) ?? 'Ativo';
+    final f = m['prod.form'];
+    if (f is! Map) return;
+    _editando = f['editando'] as Produto?;
+    final textos = f['textos'] as List<String>;
+    for (var i = 0; i < textos.length; i++) {
+      _camposForm[i].text = textos[i];
+    }
+    _unidade = f['unidade'] as String;
+    _categoria = f['categoria'] as int?;
+    _validade = f['validade'] as String;
+    _imagemBytes = f['imagemBytes'] as Uint8List?;
+    _imagemData = f['imagemData'] as String?;
+  }
+
+  @override
+  void deactivate() {
+    _s.memoria
+      ..['prod.busca'] = _busca.text
+      ..['prod.categoria'] = _filtroCategoria
+      ..['prod.status'] = _status
+      ..['prod.form'] = _editando == null
+          ? null
+          : {'editando': _editando, 'textos': [for (final c in _camposForm) c.text], 'unidade': _unidade, 'categoria': _categoria, 'validade': _validade, 'imagemBytes': _imagemBytes, 'imagemData': _imagemData};
+    super.deactivate();
   }
 
   Future<void> _iniciar() async {
@@ -90,7 +127,16 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
 
   String _txt(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString().replaceAll('.', ',');
 
-  void _preencher(Produto p) => setState(() {
+  void _preencher(Produto p) {
+    _preencherCampos(p);
+    // v1: rola até o formulário (no celular o catálogo fica embaixo).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _chaveFormulario.currentContext;
+      if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300));
+    });
+  }
+
+  void _preencherCampos(Produto p) => setState(() {
         _editando = p;
         _imagemBytes = null;
         _imagemData = null;
@@ -186,6 +232,11 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
     }
   }
 
+  // Enter em um campo do formulário equivale ao botão "✓ Confirmar" (submit do <form> no v1).
+  void _enviarForm(String _) {
+    if (!_salvando) _salvar(continuar: false);
+  }
+
   Future<void> _escolherImagem() async {
     final arquivos = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp', 'gif']);
     final f = arquivos.firstOrNull;
@@ -237,7 +288,8 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
             height: 90,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(color: Colors.white, border: Border.all(color: const Color(0xFFD4D4D8)), borderRadius: BorderRadius.circular(4)),
-            child: ImagemProduto(bytes: _imagemBytes, url: _imagemBytes == null && _editando?.imagem.isNotEmpty == true ? _s.api.urlDoArquivo(_editando!.imagem) : null, idCategoria: _categoria, tamanhoEmoji: 48),
+            // Em edição, a ilustração é a da categoria salva (no v1 trocar a categoria só muda a prévia de produto novo).
+            child: ImagemProduto(bytes: _imagemBytes, url: _imagemBytes == null && _editando?.imagem.isNotEmpty == true ? _s.api.urlDoArquivo(_editando!.imagem) : null, idCategoria: _editando?.idCategoria ?? _categoria, tamanhoEmoji: 48),
           ),
         ),
         const SizedBox(height: 6),
@@ -256,9 +308,9 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
         ),
         const SizedBox(height: 14),
         // Em produto cadastrado, o saldo muda só por entrada, saída ou conferência.
-        Campo(_estAtual, 'Estoque Atual Inicial', figma: true, dica: '10', numerico: true, somenteLeitura: _editando != null, erro: _erroEstAtual),
+        Campo(_estAtual, 'Estoque Atual Inicial', figma: true, dica: '10', numerico: true, somenteLeitura: _editando != null, erro: _erroEstAtual, aoEnviar: _enviarForm),
         const SizedBox(height: 14),
-        Campo(_lote, 'Lote', figma: true, dica: '546320', max: 40),
+        Campo(_lote, 'Lote', figma: true, dica: '546320', max: 40, aoEnviar: _enviarForm),
         const SizedBox(height: 14),
         CampoData(rotulo: 'Validade', figma: true, emLinha: false, valor: _validade, aoMudar: (v) => setState(() => _validade = v)),
       ]);
@@ -266,24 +318,24 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
   Widget _formulario(Sessao s, bool estreita) {
     const g = SizedBox(height: 10);
     final col1 = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Campo(_nome, 'Nome do Produto *', figma: true, dica: 'Pão de Queijo', max: 200, erro: _erroNome),
+      Campo(_nome, 'Nome do Produto *', figma: true, dica: 'Pão de Queijo', max: 200, erro: _erroNome, aoEnviar: _enviarForm),
       g,
-      Campo(_codigo, 'Código', figma: true, dica: '78910001', max: 100),
+      Campo(_codigo, 'Código', figma: true, dica: '78910001', max: 100, aoEnviar: _enviarForm),
       g,
-      Campo(_custo, 'Preço custo', figma: true, dica: '1.20', numerico: true),
+      Campo(_custo, 'Preço custo', figma: true, dica: '1.20', numerico: true, aoEnviar: _enviarForm),
       g,
-      Campo(_min, 'Preço Min', figma: true, dica: '2.50', numerico: true),
+      Campo(_min, 'Preço Min', figma: true, dica: '2.50', numerico: true, aoEnviar: _enviarForm),
       g,
-      Campo(_estMin, 'Estoque Min *', figma: true, dica: '15', numerico: true, erro: _erroEstMin),
+      Campo(_estMin, 'Estoque Min *', figma: true, dica: '15', numerico: true, erro: _erroEstMin, aoEnviar: _enviarForm),
     ]);
     final col2 = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Campo(_peso, 'Peso', figma: true, dica: '50g', max: 30),
+      Campo(_peso, 'Peso', figma: true, dica: '50g', max: 30, aoEnviar: _enviarForm),
       g,
       Escolha<String>(rotulo: 'Unidade', figma: true, valor: _unidade, opcoes: [for (final u in unidades) DropdownMenuItem(value: u, child: Text(u))], aoMudar: (v) => setState(() => _unidade = v ?? 'UN')),
       g,
-      Campo(_venda, 'Preço Venda *', figma: true, dica: '3.50', numerico: true, erro: _erroVenda),
+      Campo(_venda, 'Preço Venda *', figma: true, dica: '3.50', numerico: true, erro: _erroVenda, aoEnviar: _enviarForm),
       g,
-      Campo(_max, 'Preço Max', figma: true, dica: '5.00', numerico: true),
+      Campo(_max, 'Preço Max', figma: true, dica: '5.00', numerico: true, aoEnviar: _enviarForm),
       g,
       Escolha<int>(rotulo: 'Categoria *', figma: true, valor: _categoria, opcoes: [for (final c in s.categorias) DropdownMenuItem(value: c.id, child: Text(c.nome, overflow: TextOverflow.ellipsis))], aoMudar: (v) => setState(() => _categoria = v)),
     ]);
@@ -291,6 +343,7 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
         ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [col1, const SizedBox(height: 12), col2, const SizedBox(height: 12), _colunaFoto()])
         : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col1), const SizedBox(width: 12), Expanded(child: col2), const SizedBox(width: 12), SizedBox(width: 130, child: _colunaFoto())]);
     return Cartao(
+      key: _chaveFormulario,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         colunas,
         const SizedBox(height: 10),
@@ -341,6 +394,7 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
           Tabela<Produto>(
             itens: _lista,
             vazio: _falhou ? 'Falha ao carregar o catálogo.' : 'Nenhum produto encontrado.',
+            vazioSimples: !_falhou,
             larguraMinima: 400,
             alturaMaxima: 260,
             respiro: 8,
@@ -357,7 +411,11 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
               Coluna(
                 'Ações',
                 (p) => p.ativo
-                    ? Wrap(spacing: 4, runSpacing: 2, children: [Botao('✏️', () => _preencher(p), tipo: TipoBotao.secundario, pequeno: true, dica: 'Alterar produto'), Botao('🗑️', () => _mudarStatus(p, 'Inativo'), tipo: TipoBotao.perigo, pequeno: true, dica: 'Inativar produto')])
+                    // .btn.btn-sm com emoji (não são .btn-icon)
+                    ? Wrap(spacing: 4, runSpacing: 2, children: [
+                        Botao('✏️', () => _preencher(p), tipo: TipoBotao.secundario, pequeno: true, dica: 'Alterar produto'),
+                        Botao('🗑️', () => _mudarStatus(p, 'Inativo'), tipo: TipoBotao.perigo, pequeno: true, dica: 'Inativar produto'),
+                      ])
                     : Botao('↺ Reativar', () => _mudarStatus(p, 'Ativo'), tipo: TipoBotao.secundario, pequeno: true),
                 flex: 4,
               ),
@@ -376,7 +434,8 @@ class _ProdutosTelaState extends ConsumerState<ProdutosTela> {
         if (largura <= 1100)
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_formulario(s, largura <= 900), const SizedBox(height: 16), _catalogo(s)])
         else
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 14, child: _formulario(s, false)), const SizedBox(width: 16), Expanded(flex: 10, child: _catalogo(s))]),
+          // grid 1.4fr 1fr: os dois cartões com a mesma altura
+          AlturaIgual(fracaoEsquerda: 1.4 / 2.4, esquerda: _formulario(s, false), direita: _catalogo(s)),
       ],
     );
   }
