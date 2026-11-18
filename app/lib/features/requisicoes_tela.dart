@@ -20,15 +20,23 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
   List<Requisicao> _reqs = [];
   List<Produto> _produtos = [];
   bool _falhou = false;
-  String _filtro = 'TODOS';
-  late int? _selecionada = widget.selecionarId;
+  // No v1 o filtro e a requisição selecionada ficavam guardados ao trocar de tela.
+  late String _filtro = (_s.memoria['req.filtro'] as String?) ?? 'TODOS';
+  late int? _selecionada = widget.selecionarId ?? _s.memoria['req.sel'] as int?;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
     super.initState();
     _carregar();
+  }
+
+  @override
+  void dispose() {
+    _s.memoria['req.filtro'] = _filtro;
+    _s.memoria['req.sel'] = _selecionada;
+    super.dispose();
   }
 
   Future<void> _carregar() async {
@@ -68,6 +76,12 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
     return true;
   }
 
+  // v1: clicar numa ação também seleciona a linha (a vitrine mostra a requisição).
+  void _agir(Requisicao r, Future<void> Function(Requisicao) acao) {
+    setState(() => _selecionada = r.id);
+    acao(r);
+  }
+
   Future<void> _avancar(Requisicao r) async {
     final alvo = r.situacao == 'Em Aberto' ? 'Cotado' : 'AF Gerada';
     if (await confirmar(context, 'Atualizar a requisição ${r.codigo} para "$alvo"?', ok: 'Atualizar')) {
@@ -75,11 +89,12 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
     }
   }
 
-  Future<void> _receber(Requisicao r) => showDialog<void>(context: context, builder: (_) => _Receber(r, (v) => _mudar(r, {'situacao': 'Finalizado', 'quantidade_recebida': v})));
+  Future<void> _receber(Requisicao r) => abrirModal<void>(context, (_) => _Receber(r, (v) => _mudar(r, {'situacao': 'Finalizado', 'quantidade_recebida': v})));
 
-  Future<void> _cancelar(Requisicao r) => showDialog<void>(context: context, builder: (_) => _Cancelar(r, (j) => _mudar(r, {'situacao': 'Cancelado', 'justificativa': j})));
+  // Cancelar e "Motivo do Cancelamento" são modais fixos do index.html do v1: não fecham com Esc nem com clique fora.
+  Future<void> _cancelar(Requisicao r) => abrirModal<void>(context, (_) => _Cancelar(r, (j) => _mudar(r, {'situacao': 'Cancelado', 'justificativa': j})), estatico: true);
 
-  Future<void> _detalhes(Requisicao r) => showDialog<void>(context: context, builder: (c) => r.situacao == 'Cancelado' ? _DetalheCancelamento(r) : _Historico(r));
+  Future<void> _detalhes(Requisicao r) => r.situacao == 'Cancelado' ? abrirModal<void>(context, (_) => _DetalheCancelamento(r), estatico: true) : abrirModal<void>(context, (_) => _Historico(r));
 
   Widget _selo(Requisicao r) {
     if (r.situacao == 'Cancelado') {
@@ -90,7 +105,7 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
           label: 'Cancelado',
           excludeSemantics: true,
           child: InkWell(
-            onTap: () => _detalhes(r),
+            onTap: () => _agir(r, _detalhes),
             borderRadius: BorderRadius.circular(99),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -103,16 +118,16 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
     }
     return Tooltip(
       message: 'Clique para ver o histórico',
-      child: InkWell(onTap: () => _detalhes(r), child: r.situacao == 'Finalizado' ? Selo(r.situacao) : Selo.alerta(r.situacao)),
+      child: InkWell(onTap: () => _agir(r, _detalhes), child: r.situacao == 'Finalizado' ? Selo(r.situacao) : Selo.alerta(r.situacao)),
     );
   }
 
   Widget _acoes(Requisicao r, Sessao s) {
     if (!r.aberta) return const Text('Concluído', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)));
     return Wrap(children: [
-      if (s.pode('requisicoes:receber')) BotaoIcone('✔', 'Confirmar e Receber Mercadoria (Entrada no Estoque)', () => _receber(r), tipo: TipoAcao.aceitar),
-      if (s.pode('requisicoes:avancar') && r.situacao != 'AF Gerada') BotaoIcone('➜', r.situacao == 'Em Aberto' ? 'Marcar como cotado' : 'Gerar AF', () => _avancar(r), tipo: TipoAcao.avancar),
-      if (s.pode('requisicoes:cancelar')) BotaoIcone('✕', 'Cancelar Requisição', () => _cancelar(r), tipo: TipoAcao.cancelar),
+      if (s.pode('requisicoes:receber')) BotaoIcone('✔', 'Confirmar e Receber Mercadoria (Entrada no Estoque)', () => _agir(r, _receber), tipo: TipoAcao.aceitar),
+      if (s.pode('requisicoes:avancar') && r.situacao != 'AF Gerada') BotaoIcone('➜', r.situacao == 'Em Aberto' ? 'Marcar como cotado' : 'Gerar AF', () => _agir(r, _avancar), tipo: TipoAcao.avancar),
+      if (s.pode('requisicoes:cancelar')) BotaoIcone('✕', 'Cancelar Requisição', () => _agir(r, _cancelar), tipo: TipoAcao.cancelar),
     ]);
   }
 
@@ -127,7 +142,8 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
         Cartao(
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             BarraFiltros(filhos: [
-              Text('Filtrar por Situação:', style: TextStyle(fontSize: 14.4, color: Cores.texto)),
+              // <span class="filter-label"> sem estilo próprio: 16px.
+              Text('Filtrar por Situação:', style: TextStyle(fontSize: 16, color: Cores.texto)),
               for (final f in const ['TODOS', 'Em Aberto', 'Finalizado', 'Cancelado'])
                 // v1: .filter-req-btn.active marca o filtro atual (sem estilo próprio no style.css).
                 Botao(f == 'TODOS' ? 'Todos' : f, () => setState(() => _filtro = f), tipo: TipoBotao.secundario, pequeno: true, selecionado: _filtro == f),
@@ -135,6 +151,7 @@ class _RequisicoesTelaState extends ConsumerState<RequisicoesTela> {
             Tabela<Requisicao>(
               itens: _filtradas,
               vazio: _falhou ? 'Não foi possível carregar as requisições.' : 'Nenhuma requisição encontrada.',
+              vazioSimples: true,
               larguraMinima: 1040,
               selecionado: (r) => r.id == _selecionada,
               aoTocar: (r) => setState(() => _selecionada = r.id),
@@ -181,8 +198,9 @@ class _Vitrine extends StatelessWidget {
           const SizedBox(width: 6),
           if (x == null) const Selo('-') else switch (x.situacao) { 'Em Aberto' => Selo.alerta(x.situacao), 'Finalizado' => Selo.sucesso(x.situacao), 'Cancelado' => Selo.perigo(x.situacao), _ => Selo(x.situacao) },
         ]);
+    // .req-meta-columns: sempre 3 colunas, inclusive no celular.
     final grade = LayoutBuilder(builder: (context, lim) {
-      final largura = estreita ? lim.maxWidth : (lim.maxWidth - 28) / 3;
+      final largura = (lim.maxWidth - 28) / 3;
       Widget c(Widget w) => SizedBox(width: largura, child: Align(alignment: Alignment.centerLeft, child: w));
       return Wrap(spacing: 14, runSpacing: 8, children: [
         c(campo('Pedido:', vazio ? '-' : x!.produto)),
@@ -253,15 +271,17 @@ class _Historico extends StatelessWidget {
         acaoUnica: Botao('Fechar', () => Navigator.pop(context), tipo: TipoBotao.secundario, bloco: true),
         filhos: [
           Mensagem('${r.produto} • ${r.fornecedor}'),
+          // <ol class="timeline">: itens de 16px com <small> embaixo, 8px entre eles.
           for (var i = 0; i < r.historico.length; i++)
             Padding(
-              padding: const EdgeInsets.only(left: 2, bottom: 8),
+              padding: const EdgeInsets.only(bottom: 8),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(width: 18, child: Text('${i + 1}.', style: const TextStyle(fontSize: 14))),
+                SizedBox(width: 18, child: Text('${i + 1}.', textAlign: TextAlign.right, style: const TextStyle(fontSize: 16, color: Color(0xFF111827)))),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${r.historico[i]['situacao']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                    Text('${dataBR('${r.historico[i]['data']}')} • ${r.historico[i]['usuario']}', style: const TextStyle(fontSize: 12.8)),
+                    Text('${r.historico[i]['situacao']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF111827))),
+                    Text('${dataBR('${r.historico[i]['data']}')} • ${r.historico[i]['usuario']}', style: const TextStyle(fontSize: 13.3, color: Color(0xFF111827))),
                   ]),
                 ),
               ]),
@@ -328,12 +348,13 @@ class _ReceberState extends State<_Receber> {
     if (_ocupado) return;
     final r = widget.r;
     final v = lerNumero(_qtd.text);
-    final erro = erroQuantidade(r.unidade, v, nome: r.produto);
-    if (erro != null || v! > r.pendente) {
+    // Mesma checagem e mensagem do v1; fração em produto por unidade é recusada pelo servidor.
+    if (v == null || !(v > 0) || v > r.pendente) {
       setState(() => _erro = true);
-      avisar(erro ?? 'Informe uma quantidade entre 0 e ${quantidade(r.pendente)}.', tipo: TipoAviso.erro);
+      avisar('Informe uma quantidade entre 0 e ${quantidade(r.pendente)}.', tipo: TipoAviso.erro);
       return;
     }
+    setState(() => _erro = false);
     // v1: o modal só fecha se o servidor aceitar; no erro a quantidade digitada fica.
     _ocupado = true;
     final ok = await widget.enviar(v);
@@ -359,9 +380,9 @@ class _ReceberState extends State<_Receber> {
             TextSpan(text: quantidade(r.pendente), style: const TextStyle(fontWeight: FontWeight.w700)),
           ])),
         ),
-        Campo(_qtd, 'Quantidade recebida agora (${r.unidade})', numerico: true, autofoco: true, erro: _erro, aoEnviar: (_) => _confirmar()),
+        Campo(_qtd, 'Quantidade recebida agora (${r.unidade})', numerico: true, autofoco: true, erro: _erro),
         espacoCampo,
-        Text('${r.idProduto != null ? 'O estoque será atualizado automaticamente (entrada).' : 'Produto fora do catálogo: nenhum estoque será alterado.'} Se receber menos que o pendente, o pedido continua aberto.', style: const TextStyle(fontSize: 14, color: Color(0xFF52525B))),
+        Text('${r.idProduto != null ? 'O estoque será atualizado automaticamente (entrada).' : 'Produto fora do catálogo: nenhum estoque será alterado.'} Se receber menos que o pendente, o pedido continua aberto.', style: const TextStyle(fontSize: 16, color: Color(0xFF52525B))),
       ],
     );
   }
