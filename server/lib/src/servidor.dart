@@ -198,9 +198,15 @@ class Servidor {
     };
   }
 
-  String _cookieSessao(String token, int? maxAge) =>
-      '$_cookie=$token; Path=/; HttpOnly; SameSite=Lax${maxAge != null && maxAge != 0 ? '; Max-Age=$maxAge' : ''}';
-  static const _cookieLimpo = '$_cookie=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  // Atrás de HTTPS (direto ou por proxy reverso com X-Forwarded-Proto), o cookie leva Secure e
+  // não trafega numa conexão HTTP. Em HTTP puro (rede local) fica sem, senão o navegador o recusaria.
+  static bool viaHttps(Request req) =>
+      req.requestedUri.scheme == 'https' ||
+      jsTrim((req.headers['x-forwarded-proto'] ?? '').split(',').first).toLowerCase() == 'https';
+
+  String _cookieSessao(Request req, String token, int? maxAge) =>
+      '$_cookie=$token; Path=/; HttpOnly; SameSite=Lax${maxAge != null && maxAge != 0 ? '; Max-Age=$maxAge' : ''}${viaHttps(req) ? '; Secure' : ''}';
+  static String _cookieLimpo(Request req) => '$_cookie=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${viaHttps(req) ? '; Secure' : ''}';
 
   String _ip(Request req) {
     final info = req.context['shelf.io.connection_info'];
@@ -210,7 +216,7 @@ class Servidor {
   // Confere a senha de gerente, com o mesmo limite de tentativas do login.
   Future<Obj> _autorizarGerente(Contexto ctx, [List<String>? aceitos]) async {
     final chave = 'gerente|${toStr(or(ctx.b('autorizador_email'), '')).toLowerCase()}|${ctx.ip}';
-    limite.checar(chave);
+    limite.iniciar(chave);
     try {
       final aut = aceitos == null
           ? await dados.authorizeManager(ctx.b('autorizador_email'), ctx.b('autorizador_senha'))
@@ -220,6 +226,8 @@ class Servidor {
     } catch (e) {
       if (e is HttpErro && e.status == 403) limite.falhou(chave);
       rethrow;
+    } finally {
+      limite.encerrar(chave);
     }
   }
 
@@ -269,7 +277,7 @@ class Servidor {
     _rota('POST', '/api/auth/login', publica: true, (ctx) async {
       final email = ctx.b('email'), senha = ctx.b('senha'), lembrar = ctx.b('lembrar');
       final chave = '${toStr(or(email, '')).toLowerCase()}|${ctx.ip}';
-      limite.checar(chave);
+      limite.iniciar(chave);
       Obj u;
       try {
         u = await dados.authenticate(email, senha);
@@ -277,6 +285,8 @@ class Servidor {
         if (e is HttpErro && e.status == 401) limite.falhou(chave);
         logger.log('AVISO', 'login_falhou', {'email': sliceStr(toStr(or(email, '')), 100), 'motivo': mensagemDe(e)});
         rethrow;
+      } finally {
+        limite.encerrar(chave);
       }
       limite.sucesso(chave);
       final s = await dados.createSession(u['id_usuario'], lembrar);
@@ -284,14 +294,14 @@ class Servidor {
       final d = {'message': 'Login realizado com sucesso', 'user': dados.publicUser(u), 'permissoes': permissoesDe(u['nome_perfil'])};
       // O app nativo guarda o token e usa "Authorization: Bearer"; o navegador fica só com o cookie HttpOnly.
       if (_ehApp(ctx.req)) return ok({...d, 'token': s.token});
-      return Saida.json({'success': true, ...d}, cabecalhos: {'Set-Cookie': _cookieSessao(s.token, s.maxAgeSeg)});
+      return Saida.json({'success': true, ...d}, cabecalhos: {'Set-Cookie': _cookieSessao(ctx.req, s.token, s.maxAgeSeg)});
     });
 
     _rota('POST', '/api/auth/logout', publica: true, (ctx) async {
       final token = tokenDaRequisicao(ctx.req);
       if (ctx.user != null) logger.log('INFO', 'logout', {}, toStr(ctx.user!['email']));
       await dados.deleteSession(token);
-      return Saida.json({'success': true, 'message': 'Sessão encerrada.'}, cabecalhos: {'Set-Cookie': _cookieLimpo});
+      return Saida.json({'success': true, 'message': 'Sessão encerrada.'}, cabecalhos: {'Set-Cookie': _cookieLimpo(ctx.req)});
     });
 
     _rota('GET', '/api/auth/me', publica: true, (ctx) async {

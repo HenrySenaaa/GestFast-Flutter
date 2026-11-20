@@ -617,4 +617,52 @@ void main() {
     expect((await a.put('/api/users/$idf', {'senha': 'func123'})).status, 200);
     expect((await f.get('/api/auth/me')).status, 401);
   });
+
+  // ---------------------------------------------------------------- auditoria de segurança
+  test('Auditoria 1: logins paralelos não furam o bloqueio de 5 tentativas', () async {
+    final rs = await Future.wait([
+      for (var i = 0; i < 12; i++)
+        requisitar('POST', '$base/api/auth/login',
+            corpo: {'email': 'corrida@padarianovayork.com', 'senha': 'errada$i'}, headers: {'Content-Type': 'application/json'}),
+    ]);
+    final st = rs.map((r) => r.status).toList();
+    expect(st.where((s) => s == 401).length, lessThanOrEqualTo(5), reason: '$st');
+    expect(st.where((s) => s == 429).length, greaterThanOrEqualTo(7), reason: '$st');
+  });
+
+  test('Auditoria 1: senha de gerente em paralelo também respeita o limite', () async {
+    final f = await func();
+    final rs = await Future.wait([
+      for (var i = 0; i < 12; i++)
+        f.post('/api/sales/1/cancel', {'autorizador_email': 'backoffice@padarianovayork.com', 'autorizador_senha': 'x$i', 'motivo': 'teste'}),
+    ]);
+    final st = rs.map((r) => r.status).toList();
+    expect(st.where((s) => s == 403).length, lessThanOrEqualTo(5), reason: '$st');
+    expect(st.where((s) => s == 429).length, greaterThanOrEqualTo(7), reason: '$st');
+  });
+
+  test('Auditoria 1: limitador reserva tentativas em andamento e as libera', () {
+    final l = Limitador(max: 2, bloqueioMs: 100, janelaMs: 1000, relogio: () => 0);
+    l.iniciar('a');
+    l.iniciar('a');
+    expect(() => l.iniciar('a'), throwsA(isA<HttpErro>().having((e) => e.status, 'status', 429)));
+    l.encerrar('a');
+    expect(() => l.iniciar('a'), returnsNormally);
+    l.sucesso('a');
+    l.encerrar('a');
+    l.encerrar('a');
+    expect(() => l.iniciar('a'), returnsNormally);
+  });
+
+  test('Auditoria 2: cookie de sessão leva Secure atrás de HTTPS e não em HTTP', () async {
+    const corpo = {'email': 'henry@padarianovayork.com', 'senha': 'func123'};
+    final http = await requisitar('POST', '$base/api/auth/login', corpo: corpo, headers: {'Content-Type': 'application/json'});
+    expect(http.headers.value('set-cookie'), isNot(contains('Secure')));
+    final https = await requisitar('POST', '$base/api/auth/login',
+        corpo: corpo, headers: {'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https'});
+    expect(https.headers.value('set-cookie'), allOf(contains('HttpOnly'), contains('SameSite=Lax'), contains('; Secure')));
+    final sai = await requisitar('POST', '$base/api/auth/logout',
+        headers: {'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https'}, bytes: utf8.encode('{}'));
+    expect(sai.headers.value('set-cookie'), contains('; Secure'));
+  });
 }

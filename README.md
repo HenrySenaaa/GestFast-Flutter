@@ -103,6 +103,8 @@ Cada um tem teste automatizado em `server/test/regressao_test.dart` ou em `app/t
 **Encontrados além da lista planejada**
 - `POST /api/products` com `id_produto` no corpo alterava o produto existente, e o cliente podia definir o caminho da imagem.
 - Valores muito grandes de preço e quantidade estouravam as colunas do banco.
+- Logins em paralelo furavam o bloqueio de 5 tentativas (todos passavam antes da primeira falha ser contada). O mesmo valia para a senha de gerente.
+- Atrás de HTTPS, o cookie de sessão saía sem `Secure`. Agora leva `Secure` quando a conexão é HTTPS ou o proxy envia `X-Forwarded-Proto: https`.
 
 **Telas (resolvidos no app novo)**
 21. Mudar o filtro na conferência apagava as contagens digitadas.
