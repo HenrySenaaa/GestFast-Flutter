@@ -188,12 +188,12 @@ class _Vitrine extends StatelessWidget {
     final vazio = r == null;
     final estreita = telaEstreita(context);
     final x = r;
-    Widget campo(String rotulo, String valor, {bool forte = true}) => Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(rotulo, style: const TextStyle(fontSize: 14.1, color: Color(0xFF4B5563))),
-          const SizedBox(width: 6),
-          Flexible(child: Text(valor, style: const TextStyle(fontSize: 14.1, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
-        ]);
-    Widget situacao() => Row(mainAxisSize: MainAxisSize.min, children: [
+    // Texto corrido como no v1: em coluna estreita o rótulo e o valor quebram a linha em vez de vazar.
+    Widget campo(String rotulo, String valor, {bool forte = true}) => Text.rich(TextSpan(style: const TextStyle(fontSize: 14.1, color: Color(0xFF4B5563)), children: [
+          TextSpan(text: '$rotulo '),
+          TextSpan(text: valor, style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+        ]));
+    Widget situacao() => Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: 4, children: [
           const Text('Situação:', style: TextStyle(fontSize: 14.1, color: Color(0xFF4B5563))),
           const SizedBox(width: 6),
           if (x == null) const Selo('-') else switch (x.situacao) { 'Em Aberto' => Selo.alerta(x.situacao), 'Finalizado' => Selo.sucesso(x.situacao), 'Cancelado' => Selo.perigo(x.situacao), _ => Selo(x.situacao) },
@@ -255,7 +255,7 @@ class _Vitrine extends StatelessWidget {
           decoration: BoxDecoration(border: Border(top: BorderSide(color: Cores.bordaCartao))),
           child: estreita
               ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [endereco, const SizedBox(height: 10), valores])
-              : Row(children: [Expanded(child: endereco), const SizedBox(width: 12), valores]),
+              : Row(children: [Expanded(child: endereco), const SizedBox(width: 12), Flexible(child: valores)]),
         ),
       ]),
     );

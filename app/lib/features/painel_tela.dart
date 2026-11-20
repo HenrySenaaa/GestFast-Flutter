@@ -100,7 +100,7 @@ class _PainelTelaState extends ConsumerState<PainelTela> with WidgetsBindingObse
             ]),
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
-            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 320), child: Text(_ultima, style: const TextStyle(fontSize: 12.8, color: Color(0xFF64748B)))),
+            Flexible(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 320), child: Text(_ultima, style: const TextStyle(fontSize: 12.8, color: Color(0xFF64748B))))),
             const SizedBox(width: 10),
             Semantics(
               button: true,
@@ -313,7 +313,7 @@ class _LinhaDadoState extends State<_LinhaDado> {
           child: Row(children: [
             Expanded(child: Text(l.titulo, style: TextStyle(fontSize: 15.2, color: Cores.texto))),
             const SizedBox(width: 8),
-            Text(l.valor, style: TextStyle(fontSize: 15.2, fontWeight: FontWeight.w900, color: l.cor ?? const Color(0xFF111827))),
+            Flexible(child: Text(l.valor, textAlign: TextAlign.right, style: TextStyle(fontSize: 15.2, fontWeight: FontWeight.w900, color: l.cor ?? const Color(0xFF111827)))),
           ]),
         ),
       ),

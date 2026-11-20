@@ -260,11 +260,16 @@ class TituloCartao extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Cores.bordaCartao))),
-      child: Row(children: [
-        Text(titulo, style: TextStyle(fontSize: h3 ? 18.7 : 18.4, fontWeight: h3 ? FontWeight.w700 : FontWeight.w900, color: Cores.preto)),
-        const SizedBox(width: 12),
-        if (direita != null) Expanded(child: Align(alignment: Alignment.centerRight, child: direita!)) else const Spacer(),
-      ]),
+      // flex com space-between: em cartão estreito o título quebra a linha em vez de vazar.
+      child: LayoutBuilder(
+        builder: (context, lim) => Row(children: [
+          Expanded(child: Text(titulo, style: TextStyle(fontSize: h3 ? 18.7 : 18.4, fontWeight: h3 ? FontWeight.w700 : FontWeight.w900, color: Cores.preto))),
+          if (direita != null) ...[
+            const SizedBox(width: 12),
+            ConstrainedBox(constraints: BoxConstraints(maxWidth: lim.maxWidth * .6), child: direita!),
+          ],
+        ]),
+      ),
     );
   }
 }
@@ -650,7 +655,7 @@ class CampoData extends StatelessWidget {
       return Row(mainAxisSize: MainAxisSize.min, children: [
         Text(rotulo, style: TextStyle(fontSize: 13.1, fontWeight: FontWeight.w700, color: Cores.texto)),
         const SizedBox(width: 6),
-        caixa,
+        Flexible(child: caixa),
       ]);
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
