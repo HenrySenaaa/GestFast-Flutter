@@ -112,7 +112,7 @@ Uint8List base64Node(String s) {
 
 class Servidor {
   Servidor({required this.config, required this.dados, required this.logger, required this.relogio, Limitador? limitador})
-      : limite = limitador ?? Limitador(),
+      : limite = limitador ?? Limitador(relogio: relogio.agoraMs),
         caminhos = CaminhosNode.daPlataforma() {
     pastaWeb = caminhos.normalize(config.pastaWeb);
     origensCors = config.origensCors;

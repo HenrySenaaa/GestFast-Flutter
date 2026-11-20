@@ -820,7 +820,9 @@ class Dados {
       '''SELECT h.id_requisicao, h.data_registro, h.situacao, u.nome AS usuario
        FROM requisicao_historico h LEFT JOIN usuario u ON u.id_usuario = h.id_usuario
        WHERE h.id_requisicao IN (?) ORDER BY h.id_historico''',
-      [for (final r in rows) r['id_requisicao']],
+      [
+        [for (final r in rows) r['id_requisicao']],
+      ],
     );
     return [
       for (final r in rows)
@@ -1237,7 +1239,7 @@ class Dados {
           if (recebido > maxTotal) throw erro('O valor recebido é grande demais.');
           troco = r2(recebido - total);
         }
-        final aut = gateways.autorizarPagamento(formaTxt, cfg);
+        final aut = gateways.autorizarPagamento(formaTxt, cfg, relogio.agoraMs());
 
         // Código provisório; depois vira VENDA-(1000 + id), como na versão anterior.
         final dInf = _num(prop(data, 'desconto'));
@@ -1477,7 +1479,9 @@ class Dados {
       '''SELECT i.id_conferencia, i.id_produto, p.nome_produto, p.unidade, i.lote, i.quantidade_sistema, i.quantidade_fisica, i.divergencia
        FROM item_conferencia i JOIN produto p ON p.id_produto = i.id_produto
        WHERE i.id_conferencia IN (?) ORDER BY i.id_item_conferencia''',
-      [for (final c in confs) c['id_conferencia']],
+      [
+        [for (final c in confs) c['id_conferencia']],
+      ],
     );
     return [
       for (final c in confs)

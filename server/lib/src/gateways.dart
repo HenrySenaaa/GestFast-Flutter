@@ -7,11 +7,11 @@ class Autorizacao {
   final String nsu;
 }
 
-Autorizacao autorizarPagamento(Object? forma, Map<String, Object?> cfg) {
+Autorizacao autorizarPagamento(Object? forma, Map<String, Object?> cfg, int agoraMs) {
   if (toStr(forma).startsWith('Cartão') && cfg['simularCartaoNegado'] == true) {
     throw HttpErro(402, 'Transação Negada pela Operadora');
   }
-  final ms = DateTime.now().millisecondsSinceEpoch.toString();
+  final ms = agoraMs.toString();
   return Autorizacao(ms.substring(ms.length - 8));
 }
 
