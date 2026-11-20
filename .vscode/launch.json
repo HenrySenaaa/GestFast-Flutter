@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Servidor (porta 3001)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/backend",
+      "program": "${workspaceFolder}/backend/server.js",
+      "console": "integratedTerminal",
+      "env": { "PORT": "3001", "CORS_ORIGINS": "http://localhost:5000" }
+    },
+    {
+      "name": "App web (Edge)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "app",
+      "program": "lib/main.dart",
+      "deviceId": "edge",
+      "args": ["--web-port=5000", "--dart-define=GESTFAST_API=http://localhost:3001"]
+    },
+    {
+      "name": "App (dispositivo selecionado)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "app",
+      "program": "lib/main.dart"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "GestFast (servidor + app web)",
+      "configurations": ["Servidor (porta 3001)", "App web (Edge)"],
+      "stopAll": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O Android não permite liberar HTTP por faixa de IP. Quem restringe HTTP à rede local é o app (validarServidor). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
