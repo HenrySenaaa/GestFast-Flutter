@@ -3,11 +3,11 @@
   "configurations": [
     {
       "name": "Servidor (porta 3001)",
-      "type": "node",
+      "type": "dart",
       "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
-      "program": "${workspaceFolder}/backend/server.js",
-      "console": "integratedTerminal",
+      "cwd": "server",
+      "program": "bin/server.dart",
+      "console": "terminal",
       "env": { "PORT": "3001", "CORS_ORIGINS": "http://localhost:5000" }
     },
     {

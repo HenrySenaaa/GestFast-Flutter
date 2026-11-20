@@ -3,24 +3,28 @@
 Porte do GestFast v1 (1.3.0) para Flutter/Dart, com os bugs do v1 corrigidos. **A interface é fiel à do v1**: mesmas telas, textos, cores, emojis, tabelas e layout (referência: `public/` e `style.css` do projeto v1). O projeto é só local: não há repositório no GitHub.
 
 ```
-backend/   servidor Node.js + MySQL, com as correções (mesmo banco do v1, sem migração)
+server/    servidor em Dart (shelf) + MySQL, com as correções (mesmo banco do v1, sem migração)
+database/  scripts SQL do banco (schema.sql, seed.sql e migracao-etapa2.sql)
 app/       app Flutter: Android, iOS, Web, Windows, macOS e Linux
+tool/      scripts Node que geraram as tabelas e os goldens da semântica de JavaScript
 ```
 
-O app não acessa o MySQL diretamente: ele fala com o `backend/` pela API, para a senha do banco não ficar dentro do app.
+O app não acessa o MySQL diretamente: ele fala com o `server/` pela API, para a senha do banco não ficar dentro do app.
 
 ## Como rodar
 
-O Flutter deste projeto é o da versão **3.47.9**, em `C:\dev\flutter`. O `flutter` do PATH ainda é a versão antiga (`C:\flutter`, 3.19.3), que não compila este app. Use o caminho completo, como nos comandos abaixo. O VS Code já usa o SDK certo quando você abre a pasta `GestFast-Flutter` (`.vscode/settings.json`).
+O Flutter deste projeto é o da versão **3.47.9**, em `C:\dev\flutter` (o Dart do servidor é o que vem com ele, `C:\dev\flutter\bin\dart`). O `flutter` e o `dart` do PATH ainda são da versão antiga (`C:\flutter`, 3.19.3), que não compila este projeto. Use o caminho completo, como nos comandos abaixo. O VS Code já usa o SDK certo quando você abre a pasta `GestFast-Flutter` (`.vscode/settings.json`).
 
-### 1. Backend
+### 1. Servidor
 
 ```powershell
-cd backend
-copy .env.example .env    # coloque a senha do seu MySQL no .env
-npm install
-npm start                 # http://localhost:3000
+cd server
+copy .env.example .env                          # coloque a senha do seu MySQL no .env
+C:\dev\flutter\bin\dart pub get
+C:\dev\flutter\bin\dart run bin/server.dart     # http://localhost:3000
 ```
+
+O servidor em Dart substituiu o antigo backend Node.js e responde exatamente como ele (conferido pelo teste de contrato, em Testes).
 
 Pode usar o banco `gestfast` que você já tem: o esquema não mudou. Para um banco novo, rode `database/schema.sql` e `database/seed.sql` no Workbench. **O `schema.sql` apaga o banco `gestfast` existente.**
 
@@ -30,7 +34,7 @@ Para o celular alcançar o servidor, coloque `HOST=0.0.0.0` no `.env` e use o IP
 
 ### Pelo VS Code
 
-Abra a pasta `GestFast-Flutter`, vá em **Run and Debug** (`Ctrl+Shift+D`), escolha **GestFast (servidor + app web)** e aperte `F5`. Isso sobe o servidor na porta 3001 e o app no Edge, já ligados. O `backend/.env` precisa existir, com a senha do MySQL.
+Abra a pasta `GestFast-Flutter`, vá em **Run and Debug** (`Ctrl+Shift+D`), escolha **GestFast (servidor + app web)** e aperte `F5`. Isso sobe o servidor na porta 3001 e o app no Edge, já ligados. O `server/.env` precisa existir, com a senha do MySQL.
 
 ### 2. App na web
 
@@ -39,7 +43,7 @@ cd app
 C:\dev\flutter\bin\flutter build web --release --no-web-resources-cdn --pwa-strategy=none
 ```
 
-Depois abra http://localhost:3000. O backend entrega o site de `app/build/web`, então é preciso gerar o build de novo sempre que o app mudar.
+Depois abra http://localhost:3000. O servidor entrega o site de `app/build/web`, então é preciso gerar o build de novo sempre que o app mudar.
 
 ### 3. App nas outras plataformas
 
@@ -56,16 +60,19 @@ No login dos apps nativos, informe o endereço do servidor. No emulador Android,
 ## Testes
 
 ```powershell
-cd backend
-npm test                                  # 42 testes; usa o banco gestfast_test, nunca o gestfast
+cd server
+C:\dev\flutter\bin\dart test              # 58 testes; usa bancos *_test, nunca o gestfast
+C:\dev\flutter\bin\dart analyze
 cd ..\app
 C:\dev\flutter\bin\flutter test           # testes do app
 C:\dev\flutter\bin\flutter analyze
 ```
 
+Os testes do servidor recriam os bancos de teste a partir de `database/schema.sql` e `seed.sql`, no MySQL do `server/.env` (ou das variáveis `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_USER` e `TEST_DB_PASSWORD`). O `test/contrato_test.dart` faz 438 requisições (todas as rotas, os três perfis, casos válidos e inválidos) e compara cada resposta com a do servidor Node original, gravada em `server/test/golden/contrato.json`. Esse golden foi gerado por `tool/contrato/harness.dart`, que subia os dois servidores lado a lado, com relógio fixo e bancos idênticos.
+
 ## Bugs do v1 corrigidos
 
-Cada um tem teste automatizado em `backend/test/regressao.test.js` ou em `app/test/`.
+Cada um tem teste automatizado em `server/test/regressao_test.dart` ou em `app/test/`.
 
 **Dados**
 1. Salvar um produto sobrescrevia o estoque com o valor da tela, sem histórico. Agora o saldo só muda por movimentação, e o estoque inicial entra no histórico.

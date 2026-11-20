@@ -8,6 +8,8 @@
 //
 // --gravar escreve as respostas do Node em test/golden/contrato.json (usado por test/contrato_test.dart).
 // O banco vem de TEST_DB_* (ou do .env); os bancos usados são contrato_node_test e contrato_dart_test.
+// O backend Node foi removido do repositório; para rodar de novo, recupere-o do histórico do Git
+// (git worktree add ../ref <commit anterior à remoção>) e passe a pasta em --node.
 import 'dart:convert';
 import 'dart:io';
 
