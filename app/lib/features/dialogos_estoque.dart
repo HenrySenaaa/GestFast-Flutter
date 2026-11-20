@@ -19,7 +19,8 @@ Future<Requisicao?> abrirNovaRequisicao(BuildContext context, Sessao s, {int? id
     return (await carregarProdutosAtivos(s), ((f['suppliers'] as List?) ?? const []).map((e) => e.toString()).toList());
   });
   if (dados == null || !context.mounted) return null;
-  return showDialog<Requisicao>(context: context, builder: (_) => _NovaRequisicao(s, dados.$1, dados.$2, idProduto));
+  // Modal fixo do index.html do v1: não fecha com Esc nem com clique fora.
+  return abrirModal<Requisicao>(context, (_) => _NovaRequisicao(s, dados.$1, dados.$2, idProduto), estatico: true);
 }
 
 class _NovaRequisicao extends StatefulWidget {
@@ -40,7 +41,7 @@ class _NovaRequisicaoState extends State<_NovaRequisicao> {
   int? _produto;
   String? _fornecedor;
   late String _entrega = somarDias(widget.s.hojeOuAparelho, 4);
-  bool _qtdEditada = false, _ocupado = false, _erroQtd = false, _erroObs = false;
+  bool _qtdEditada = false, _ocupado = false, _erroQtd = false, _erroObs = false, _erroEntrega = false;
 
   Produto? get _p => widget.produtos.where((x) => x.id == _produto).firstOrNull;
 
@@ -76,12 +77,14 @@ class _NovaRequisicaoState extends State<_NovaRequisicao> {
   Future<void> _enviar() async {
     final p = _p;
     final q = lerNumero(_qtd.text);
-    final erro = erroQuantidade(p?.unidade, q, nome: p?.nome ?? 'Este produto');
+    // Mesma checagem do v1; fração em produto por unidade é recusada pelo servidor.
+    final erro = q == null || !(q > 0) ? 'Informe uma quantidade maior que zero.' : null;
     setState(() {
       _erroQtd = erro != null;
       _erroObs = false;
+      _erroEntrega = false;
     });
-    if (p == null || erro != null) {
+    if (erro != null || p == null) {
       avisar(erro ?? 'Selecione um produto.', tipo: TipoAviso.erro);
       return;
     }
@@ -92,6 +95,7 @@ class _NovaRequisicaoState extends State<_NovaRequisicao> {
       return;
     }
     if (_entrega.isNotEmpty && _entrega.compareTo(widget.s.hojeOuAparelho) < 0) {
+      setState(() => _erroEntrega = true);
       avisar('A previsão de entrega não pode estar no passado.', tipo: TipoAviso.erro);
       return;
     }
@@ -129,7 +133,7 @@ class _NovaRequisicaoState extends State<_NovaRequisicao> {
           ),
           espacoCampo,
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(flex: 2, child: Campo(_qtd, 'Quantidade *', numerico: true, erro: _erroQtd, aoMudar: (_) => _qtdEditada = true)),
+            Expanded(flex: 2, child: Campo(_qtd, 'Quantidade *', numerico: true, erro: _erroQtd, aoMudar: (_) => _qtdEditada = true, aoEnviar: (_) => _enviar())),
             const SizedBox(width: 10),
             Expanded(child: Campo(_unidade, 'Unidade', somenteLeitura: true)),
           ]),
@@ -137,9 +141,9 @@ class _NovaRequisicaoState extends State<_NovaRequisicao> {
           Escolha<String>(rotulo: 'Fornecedor Cadastrado *', valor: _fornecedor, opcoes: [for (final f in widget.fornecedores) DropdownMenuItem(value: f, child: Text(f, overflow: TextOverflow.ellipsis))], aoMudar: (v) => setState(() => _fornecedor = v)),
           espacoCampo,
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Campo(_valor, 'Preço Unitário (R\$)', numerico: true)),
+            Expanded(child: Campo(_valor, 'Preço Unitário (R\$)', numerico: true, aoEnviar: (_) => _enviar())),
             const SizedBox(width: 10),
-            Expanded(child: CampoData(rotulo: 'Previsão de Entrega', valor: _entrega, emLinha: false, primeira: dataLocal(widget.s.hojeOuAparelho), aoMudar: (v) => setState(() => _entrega = v))),
+            Expanded(child: CampoData(rotulo: 'Previsão de Entrega', valor: _entrega, emLinha: false, erro: _erroEntrega, primeira: dataLocal(widget.s.hojeOuAparelho), aoMudar: (v) => setState(() => _entrega = v))),
           ]),
           espacoCampo,
           Campo(_obs, 'Observações do Pedido (opcional; se preenchida: mínimo 10, máximo 5000 caracteres)', dica: 'Ex: Pedido com prioridade alta para o turno da manhã...', linhas: 2, max: 5000, minContador: 10, erro: _erroObs),
@@ -152,14 +156,18 @@ class LinhaMov {
   LinhaMov(this.idProduto, String quantidade) : qtd = TextEditingController(text: quantidade);
   int? idProduto;
   final TextEditingController qtd;
+  bool erro = false;
 }
 
 class EditorLinhas extends StatelessWidget {
-  const EditorLinhas({super.key, required this.linhas, required this.produtos, required this.aoMudar, this.aoDigitar, this.rotuloAdicionar = '+ Adicionar outro item (lote)'});
+  const EditorLinhas({super.key, required this.linhas, required this.produtos, required this.aoMudar, this.aoDigitar, this.aoEnviar, this.rotuloAdicionar = '+ Adicionar outro item (lote)'});
   final List<LinhaMov> linhas;
   final List<Produto> produtos;
   final VoidCallback aoMudar;
   final VoidCallback? aoDigitar;
+
+  /// Enter na quantidade envia o formulário (só no modal de movimentação, que é um <form> no v1).
+  final VoidCallback? aoEnviar;
   final String rotuloAdicionar;
 
   @override
@@ -194,12 +202,18 @@ class EditorLinhas extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            SizedBox(width: qtdLargura, child: Campo(linhas[i].qtd, 'Quantidade', semRotulo: true, numerico: true, aoMudar: (_) => aoDigitar?.call())),
+            SizedBox(
+              width: qtdLargura,
+              child: Campo(linhas[i].qtd, 'Quantidade', semRotulo: true, numerico: true, erro: linhas[i].erro, aoEnviar: aoEnviar == null ? null : (_) => aoEnviar!(), aoMudar: (_) {
+                linhas[i].erro = false;
+                aoDigitar?.call();
+              }),
+            ),
             const SizedBox(width: 8),
             SizedBox(
               width: 34,
               child: linhas.length > 1
-                  ? BotaoIcone(Icons.close, 'Remover linha', () {
+                  ? BotaoIcone('✕', 'Remover linha', () {
                       linhas.removeAt(i);
                       aoMudar();
                     }, tipo: TipoAcao.cancelar)
@@ -218,18 +232,26 @@ class EditorLinhas extends StatelessWidget {
   }
 }
 
-/// Valida as linhas e monta os itens; mostra o aviso e devolve null se houver erro.
+/// Valida as linhas e monta os itens (mesma checagem e mensagem do v1); marca a linha errada e devolve null se houver erro.
+/// Fração em produto vendido por unidade é recusada pelo servidor, com a mensagem dele.
 List<Map<String, dynamic>>? lerLinhas(List<LinhaMov> linhas, List<Produto> produtos) {
   final itens = <Map<String, dynamic>>[];
   for (final l in linhas) {
+    l.erro = false;
+  }
+  for (final l in linhas) {
     final p = produtos.where((x) => x.id == l.idProduto).firstOrNull;
     final q = lerNumero(l.qtd.text);
-    final erro = p == null ? 'Selecione o produto de todas as linhas.' : erroQuantidade(p.unidade, q, nome: p.nome);
-    if (erro != null) {
-      avisar(erro, tipo: TipoAviso.erro);
+    if (q == null || !(q > 0)) {
+      l.erro = true;
+      avisar('Informe quantidades maiores que zero.', tipo: TipoAviso.erro);
       return null;
     }
-    itens.add({'id_produto': p!.id, 'quantidade': q});
+    if (p == null) {
+      avisar('Selecione o produto de todas as linhas.', tipo: TipoAviso.erro);
+      return null;
+    }
+    itens.add({'id_produto': p.id, 'quantidade': q});
   }
   return itens;
 }
@@ -264,7 +286,7 @@ class _PerdaState extends State<_Perda> {
   late final List<LinhaMov> _linhas = [
     LinhaMov(widget.produtos.any((p) => p.id == widget.idProduto) ? widget.idProduto : widget.produtos.first.id, widget.quantidade == null ? '1' : quantidade(widget.quantidade).replaceAll('.', '')),
   ];
-  bool _ocupado = false;
+  bool _ocupado = false, _erroObs = false;
 
   @override
   void dispose() {
@@ -278,10 +300,15 @@ class _PerdaState extends State<_Perda> {
       });
 
   Future<void> _enviar() async {
+    setState(() => _erroObs = false);
     final itens = lerLinhas(_linhas, widget.produtos);
-    if (itens == null) return;
+    if (itens == null) {
+      setState(() {});
+      return;
+    }
     final obs = _obs.text.trim();
     if ((_motivo == 'Outro' || obs.isNotEmpty) && obs.length < 10) {
+      setState(() => _erroObs = true);
       avisar('A observação deve ter pelo menos 10 caracteres.', tipo: TipoAviso.erro);
       return;
     }
@@ -308,9 +335,10 @@ class _PerdaState extends State<_Perda> {
           espacoCampo,
           EditorLinhas(linhas: _linhas, produtos: widget.produtos, rotuloAdicionar: '+ Adicionar outro item', aoMudar: () => setState(() {}), aoDigitar: () => setState(() {})),
           espacoCampo,
-          Campo(_obs, 'Observação (obrigatória quando o motivo é "Outro"; mínimo 10 caracteres)', dica: 'Ex: Bandeja caiu no transporte para o balcão.', linhas: 2, max: 5000),
+          Campo(_obs, 'Observação (obrigatória quando o motivo é "Outro"; mínimo 10 caracteres)', dica: 'Ex: Bandeja caiu no transporte para o balcão.', linhas: 2, max: 5000, erro: _erroObs),
           espacoCampo,
-          Text('Valor perdido (preço de custo): ${dinheiro(_valor)}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 14)),
+          // <p class="muted">: 16px, cor apagada.
+          Text('Valor perdido (preço de custo): ${dinheiro(_valor)}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 16)),
         ],
       );
 }

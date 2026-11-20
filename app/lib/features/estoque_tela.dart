@@ -18,14 +18,17 @@ class EstoqueTela extends ConsumerStatefulWidget {
 
 class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
   List<Produto> _produtos = [];
-  bool _falhou = false, _criticos = false, _validade = false;
-  int? _categoria;
-  late final _termo = TextEditingController(text: widget.filtroInicial);
+  bool _falhou = false;
+  // Os filtros ficavam como estavam ao voltar para a tela no v1 (o DOM continuava vivo).
+  late bool _criticos = _s.memoria['est.criticos'] == true, _validade = _s.memoria['est.validade'] == true;
+  late int? _categoria = _s.memoria['est.categoria'] as int?;
+  late final _termo = TextEditingController(text: widget.filtroInicial.isNotEmpty ? widget.filtroInicial : (_s.memoria['est.termo'] as String?) ?? '');
+  final Set<int> _comErro = {};
   // A contagem fica fora da tabela: mudar o filtro não apaga o que já foi digitado.
   final Map<int, TextEditingController> _contagens = {};
   final Set<int> _alterados = {};
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -35,6 +38,11 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
 
   @override
   void dispose() {
+    _s.memoria
+      ..['est.criticos'] = _criticos
+      ..['est.validade'] = _validade
+      ..['est.categoria'] = _categoria
+      ..['est.termo'] = _termo.text;
     _termo.dispose();
     for (final c in _contagens.values) {
       c.dispose();
@@ -64,13 +72,14 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
     }
   }
 
+  // v1: compara em minúsculas, sem ignorar acentos.
   List<Produto> get _filtrados {
-    final t = semAcento(_termo.text.trim());
+    final t = _termo.text.trim().toLowerCase();
     return _produtos.where((p) {
       if (_categoria != null && p.idCategoria != _categoria) return false;
       if (_criticos && !p.critico) return false;
       if (_validade && situacaoValidade(p.validade, _s.hoje, _s.diasValidade)?.alerta != true) return false;
-      return t.isEmpty || semAcento('${p.nome} ${p.codigo} ${p.lote} ${p.descricao}').contains(t);
+      return t.isEmpty || '${p.nome} ${p.codigo} ${p.lote} ${p.descricao}'.toLowerCase().contains(t);
     }).toList();
   }
 
@@ -83,18 +92,20 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
     // Se algo foi digitado, vai só o que foi contado. Sem nada digitado, confirma o que está na tela, como no v1.
     final contados = _alterados.isEmpty ? visiveis : _produtos.where((p) => _alterados.contains(p.id)).toList();
     final itens = <Map<String, dynamic>>[];
+    setState(_comErro.clear);
     for (final p in contados) {
       final v = lerNumero(_contagens[p.id]!.text);
-      final erro = v == null || v < 0 ? 'Informe uma contagem física válida (zero ou mais).' : erroQuantidade(p.unidade, v, nome: p.nome, aceitaZero: true);
-      if (erro != null) {
-        avisar(erro, tipo: TipoAviso.erro);
+      // Mesma checagem do v1; fração em produto por unidade é recusada pelo servidor, com a mensagem dele.
+      if (v == null || v < 0) {
+        setState(() => _comErro.add(p.id));
+        avisar('Informe uma contagem física válida (zero ou mais).', tipo: TipoAviso.erro);
         return;
       }
       // Com o saldo lido: se houve venda no meio, o servidor recusa em vez de desfazê-la.
       itens.add({'id_produto': p.id, 'quantidade_fisica': v, 'quantidade_sistema': p.estoque});
     }
     final divergentes = contados.where((p) => r3(lerNumero(_contagens[p.id]!.text)! - p.estoque) != 0).length;
-    final ok = await showDialog<bool>(context: context, builder: (_) => _SalvarConferencia(_s, itens, divergentes));
+    final ok = await abrirModal<bool>(context, (_) => _SalvarConferencia(_s, itens, divergentes));
     if (ok == true) {
       _alterados.clear();
       await _carregar();
@@ -107,13 +118,14 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
     final r = await tentar(() => _s.api.get('/api/inventory'));
     if (r == null || !mounted) return;
     final confs = listaJson(r['conferencias']);
-    await showDialog<void>(
-      context: context,
-      builder: (c) => Modal(
+    await abrirModal<void>(
+      context,
+      (c) => Modal(
         titulo: 'Histórico de conferências',
         largo: true,
         filhos: [
-          if (confs.isEmpty) const Padding(padding: EdgeInsets.all(18), child: Text('Nenhuma conferência registrada.', textAlign: TextAlign.center)),
+          // .empty-state
+          if (confs.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 18, horizontal: 8), child: Text('Nenhuma conferência registrada.', textAlign: TextAlign.center, style: TextStyle(fontSize: 14.4, color: Color(0xFF52525B)))),
           for (final f in confs) _ItemConferencia(f),
         ],
       ),
@@ -155,6 +167,7 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
             Tabela<Produto>(
               itens: lista,
               vazio: _falhou ? 'Não foi possível carregar o estoque.' : 'Nenhum produto encontrado.',
+              vazioSimples: true,
               larguraMinima: 860,
               dica: (p) {
                 final v = situacaoValidade(p.validade, s.hoje, s.diasValidade);
@@ -170,7 +183,10 @@ class _EstoqueTelaState extends ConsumerState<EstoqueTela> {
                   'Contagem Física',
                   (p) => SizedBox(
                     width: 85,
-                    child: Campo(_contagens.putIfAbsent(p.id, TextEditingController.new), 'Contagem física de ${p.nome}', semRotulo: true, numerico: true, aoMudar: (_) => setState(() => _alterados.add(p.id))),
+                    child: Campo(_contagens.putIfAbsent(p.id, TextEditingController.new), 'Contagem física de ${p.nome}', semRotulo: true, numerico: true, erro: _comErro.contains(p.id), aoMudar: (_) => setState(() {
+                      _alterados.add(p.id);
+                      _comErro.remove(p.id);
+                    })),
                   ),
                   flex: 4,
                 ),
@@ -228,7 +244,8 @@ class _ItemConferenciaState extends State<_ItemConferencia> {
         ),
         if (_aberto) ...[
           const SizedBox(height: 6),
-          Text('${f['observacao']} ${f['ajustou_estoque'] == false ? '(sem ajuste de estoque)' : ''}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 14)),
+          // <p class="muted">: 16px
+          Text('${f['observacao']} ${f['ajustou_estoque'] == false ? '(sem ajuste de estoque)' : ''}', style: const TextStyle(color: Color(0xFF52525B), fontSize: 16)),
           Tabela<Json>(
             itens: itens,
             larguraMinima: 480,

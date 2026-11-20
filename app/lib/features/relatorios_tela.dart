@@ -20,10 +20,13 @@ class RelatoriosTela extends ConsumerStatefulWidget {
 class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
   String _tipo = 'vendas', _de = '', _ate = '';
   int? _categoria;
-  bool _datasDoUsuario = false, _exportando = false;
+  bool _datasDoUsuario = false, _exportando = false, _erroPeriodo = false;
   Json? _relatorio;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  /// v1 (variável "ultimo"): se a última geração falhou, a tabela antiga continua na tela, mas não dá para exportar.
+  bool _valido = false;
+
+  late final Sessao _s = ref.read(sessaoProvider);
 
   @override
   void initState() {
@@ -31,10 +34,26 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
     _iniciar();
   }
 
+  @override
+  void deactivate() {
+    _s.memoria['rel'] = {'tipo': _tipo, 'de': _de, 'ate': _ate, 'categoria': _categoria, 'datasDoUsuario': _datasDoUsuario};
+    super.deactivate();
+  }
+
+  // v1: aba, período e categoria continuavam como estavam ao voltar; período vazio volta a ser o dia de hoje.
   Future<void> _iniciar() async {
+    final m = _s.memoria['rel'] as Map<String, Object?>?;
+    if (m != null) {
+      _tipo = m['tipo'] as String;
+      _de = m['de'] as String;
+      _ate = m['ate'] as String;
+      _categoria = m['categoria'] as int?;
+      _datasDoUsuario = m['datasDoUsuario'] as bool;
+    }
     await _s.sincronizar();
     if (_s.categorias.isEmpty) await tentar(_s.carregarCategorias);
-    _de = _ate = _s.hojeOuAparelho;
+    if (_de.isEmpty) _de = _ate = _s.hojeOuAparelho;
+    if (mounted) setState(() {});
     await _gerar();
   }
 
@@ -42,24 +61,34 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
 
   bool _periodoValido() {
     if (_de.isNotEmpty && _ate.isNotEmpty && _de.compareTo(_ate) > 0) {
+      setState(() => _erroPeriodo = true);
       avisar('A data inicial não pode ser posterior à data final.', tipo: TipoAviso.erro);
       return false;
     }
+    if (_erroPeriodo) setState(() => _erroPeriodo = false);
     return true;
   }
 
   Future<void> _gerar() async {
     if (!_periodoValido()) return;
-    final r = await tentar(() => _s.api.get('/api/reports/${_rotas[_tipo]}', query: _query()));
-    if (!mounted) return;
-    setState(() => _relatorio = r == null ? null : Json.from(r['report'] as Map));
+    final tipo = _tipo;
+    final r = await tentar(() => _s.api.get('/api/reports/${_rotas[tipo]}', query: _query()));
+    if (!mounted || tipo != _tipo) return;
+    setState(() {
+      _valido = r != null;
+      if (r != null) _relatorio = Json.from(r['report'] as Map);
+    });
   }
 
+  // Mesma regra do v1 ao trocar de aba: sem período escolhido pelo usuário, Estoque e Perdas abrem com todo o período
+  // e Vendas volta para hoje.
   void _mudarTipo(String t) {
     setState(() {
       _tipo = t;
-      if (!_datasDoUsuario) _de = _ate = t == 'vendas' ? _s.hojeOuAparelho : '';
+      if (t != 'vendas' && !_datasDoUsuario) _de = _ate = '';
+      if (t == 'vendas' && _de.isEmpty) _de = _ate = _s.hojeOuAparelho;
       _relatorio = null;
+      _valido = false;
     });
     _gerar();
   }
@@ -72,7 +101,7 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
 
   Future<void> _exportar(String formato) async {
     if (!_periodoValido()) return;
-    if (_relatorio == null || _linhas.isEmpty) {
+    if (!_valido || _relatorio == null || _linhas.isEmpty) {
       avisar('Não há dados para exportar. Gere um relatório com resultados primeiro.', tipo: TipoAviso.erro);
       return;
     }
@@ -113,6 +142,7 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
   }
 
   Widget _categorias(Sessao s) {
+    // .rel-cat-item (:hover e .active: fundo #374151, branco, peso 800)
     Widget item(int? id, String nome) {
       final ativa = _categoria == id;
       return Semantics(
@@ -120,16 +150,18 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
         selected: ativa,
         label: nome,
         excludeSemantics: true,
-        child: InkWell(
-          onTap: () {
-            setState(() => _categoria = id);
-            _gerar();
-          },
-          borderRadius: BorderRadius.circular(4),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            decoration: BoxDecoration(color: ativa ? const Color(0xFF374151) : Colors.transparent, borderRadius: BorderRadius.circular(4)),
-            child: Text(nome, style: TextStyle(color: ativa ? Colors.white : const Color(0xFFD1D5DB), fontSize: 14.7, fontWeight: ativa ? FontWeight.w900 : FontWeight.w500)),
+        child: Pairar(
+          builder: (context, sobre) => InkWell(
+            onTap: () {
+              setState(() => _categoria = id);
+              _gerar();
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(color: ativa || sobre ? const Color(0xFF374151) : Colors.transparent, borderRadius: BorderRadius.circular(4)),
+              child: Text(nome, style: TextStyle(color: ativa || sobre ? Colors.white : const Color(0xFFD1D5DB), fontSize: 14.7, fontWeight: ativa || sobre ? FontWeight.w800 : FontWeight.w600)),
+            ),
           ),
         ),
       );
@@ -154,11 +186,20 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
     return Cartao(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // h2 com margin-bottom 12 e <p class="rel-resumo"> com margin -4px 0 10px (o espaço fica mesmo sem texto).
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text('$titulo${nomeCategoria != null ? ' • $nomeCategoria' : ''}', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Cores.texto)),
           ),
-          if (resumo.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(resumo, textAlign: TextAlign.center, style: TextStyle(fontSize: 12.8, color: Cores.fraco))),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: resumo.isEmpty
+                ? const SizedBox.shrink()
+                : Tooltip(
+                    message: _tipo == 'vendas' && r != null ? listaJson(r['porPagamento']).map((p) => '${p['forma']} ${dinheiro(p['total'])}').join(' • ') : '',
+                    child: Text(resumo, textAlign: TextAlign.center, style: TextStyle(fontSize: 12.8, color: Cores.fraco)),
+                  ),
+          ),
           if (r != null) switch (_tipo) { 'vendas' => _tabelaVendas(r), 'estoque' => _tabelaEstoque(r), _ => _tabelaPerdas(r) },
         ]),
         Container(
@@ -186,7 +227,7 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
     return Pagina(
       cabecalho: CabecalhoAba('Relatórios', acoes: [
         Wrap(spacing: 4, children: [_aba('vendas', 'Vendas'), _aba('estoque', 'Estoque'), _aba('perdas', 'Perdas')]),
-        CampoData(rotulo: 'De', valor: _de, aoMudar: (v) {
+        CampoData(rotulo: 'De', valor: _de, erro: _erroPeriodo, aoMudar: (v) {
           setState(() {
             _de = v;
             _datasDoUsuario = true;
@@ -226,6 +267,7 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
         itens: listaJson(r['itensVendidos']),
         estilo: EstiloTabela.relatorio,
         larguraMinima: 560,
+        vazioSimples: true,
         vazio: 'Nenhum dado encontrado para o período ou categoria informada.',
         colunas: [
           Coluna('Produto', (i) => Text('${i['nome_produto']}', style: const TextStyle(fontWeight: FontWeight.w700)), flex: 6),
@@ -248,7 +290,7 @@ class _RelatoriosTelaState extends ConsumerState<RelatoriosTela> {
           Coluna('Saídas', (l) => Text(numero(l['saidas']) != 0 ? '-${quantidade(l['saidas'])}' : '0', style: const TextStyle(color: Cores.perigo, fontWeight: FontWeight.w700))),
           Coluna('Saldo atual', (l) => Text('${quantidade(l['saldo_atual'])} ${l['unidade']}', style: const TextStyle(fontWeight: FontWeight.w700))),
           Coluna('Mín.', (l) => Text(quantidade(l['estoque_minimo'])), flex: 1),
-          Coluna('Situação', (l) => l['situacao'] == 'Crítico' ? const Selo.perigo('Crítico') : const Selo.sucesso('Regular')),
+          Coluna('Situação', (l) => l['situacao'] == 'Crítico' ? const Selo.perigo('Crítico') : Selo.sucesso('${l['situacao']}')),
         ],
       );
 

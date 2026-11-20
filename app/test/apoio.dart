@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gestfast/core/api.dart';
+import 'package:gestfast/main.dart';
+import 'package:go_router/go_router.dart';
 import 'package:gestfast/core/sessao.dart';
 import 'package:gestfast/widgets/comuns.dart';
 import 'package:http/http.dart' as http;
@@ -86,3 +88,61 @@ Future<void> abrirTela(WidgetTester t, Sessao s, Widget tela) async {
 }
 
 Finder campoRotulado(String rotulo) => find.byKey(ValueKey('campo:$rotulo'));
+
+/// App completo (tema, rotas, casca, avisos e zoom), já na tela [local].
+Future<GoRouter> abrirApp(WidgetTester t, Sessao s, {String local = '/painel', Size tamanho = const Size(1400, 1000)}) async {
+  t.view.physicalSize = tamanho;
+  t.view.devicePixelRatio = 1;
+  addTearDown(t.view.reset);
+  await t.pumpWidget(ProviderScope(overrides: [sessaoProvider.overrideWith((ref) => s)], child: GestFastApp(sessao: s)));
+  await t.pump();
+  final rotas = GoRouter.of(t.element(find.byType(Navigator).first));
+  if (local != '/painel') {
+    rotas.go(local);
+  }
+  await assentar(t);
+  return rotas;
+}
+
+/// Como pumpAndSettle, mas com limite: o ponto pulsante do painel nunca para de animar.
+Future<void> assentar(WidgetTester t, {int quadros = 12}) async {
+  for (var i = 0; i < quadros; i++) {
+    await t.pump(const Duration(milliseconds: 100));
+  }
+}
+
+/// Desmonta o app e deixa os avisos e relógios terminarem.
+Future<void> encerrar(WidgetTester t) async {
+  await t.pumpWidget(const SizedBox());
+  await t.pump(const Duration(seconds: 7));
+}
+
+/// Texto atual de um campo pelo rótulo.
+String textoDe(WidgetTester t, String rotulo) => t.widget<TextField>(campoRotulado(rotulo)).controller!.text;
+
+Map<String, dynamic> painelJson({List<Map<String, dynamic>> alertas = const [], List<Map<String, dynamic>> validades = const [], int vencidos = 0, List<Map<String, dynamic>> compras = const [], List<Map<String, dynamic>> distribuicao = const []}) => {
+      'success': true,
+      'latencyMs': 7,
+      'data': {
+        'metricas': {},
+        'alertas': alertas,
+        'validades': {'itens': validades, 'vencidos': vencidos, 'dias': 3},
+        'ultimasCompras': compras,
+        'distribuicaoEstoque': distribuicao,
+      },
+    };
+
+const permissoesAdmin = [
+  'dashboard:ver', 'estoque:conferir', 'requisicoes:ver', 'requisicoes:criar', 'requisicoes:receber', 'requisicoes:cancelar', 'requisicoes:avancar',
+  'produtos:editar', 'movimentos:ver', 'movimentos:registrar', 'vendas:vender', 'vendas:ver', 'vendas:editar', 'vendas:cancelar', 'vendas:excluir',
+  'relatorios:ver', 'usuarios:gerir', 'config:gerir', 'logs:ver',
+];
+const permissoesBackOffice = [
+  'dashboard:ver', 'estoque:conferir', 'requisicoes:ver', 'requisicoes:criar', 'requisicoes:receber', 'requisicoes:cancelar', 'requisicoes:avancar',
+  'produtos:editar', 'movimentos:ver', 'movimentos:registrar', 'vendas:ver', 'relatorios:ver',
+];
+const permissoesFuncionario = [
+  'dashboard:ver', 'estoque:conferir', 'requisicoes:ver', 'requisicoes:criar', 'requisicoes:receber', 'requisicoes:cancelar',
+  'movimentos:ver', 'movimentos:registrar', 'vendas:vender', 'vendas:ver', 'vendas:editar', 'vendas:cancelar',
+];
+

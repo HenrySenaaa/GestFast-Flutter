@@ -78,8 +78,11 @@ void main() {
       expect(c.disponivel(pao), 0);
       expect(c.adicionar(pao, 0.1), contains('indisponível'));
     });
-    test('recusa fração em produto por unidade', () {
-      expect(Carrinho().adicionar(bala, 1.5), contains('inteiras'));
+    test('recusa fração em produto por unidade, com a mensagem do v1', () {
+      expect(Carrinho().adicionar(bala, 1.5), 'Bala é vendido em UN: informe uma quantidade inteira.');
+      expect(Carrinho().adicionar(bala, 0), 'Informe uma quantidade maior que zero.');
+      expect(Carrinho().adicionar(bala, null), 'Informe uma quantidade maior que zero.');
+      expect(Carrinho().adicionar(bala, 4), 'Quantidade indisponível em estoque! Disponível: 3 UN.');
     });
     test('totais com desconto em valor e percentual, sem erro de arredondamento', () {
       final c = Carrinho()..adicionar(bala, 3);
@@ -101,10 +104,11 @@ void main() {
       expect(c.troco(20, 16.9), 3.1);
       expect(c.troco(10, 16.9), lessThan(0));
     });
-    test('busca: código exato primeiro; depois parte do nome, sem acento', () {
+    test('busca: código exato primeiro; depois parte do nome, em minúsculas como no v1', () {
       final lista = [pao, bala, Produto.deJson(produtoJson(11, 'Pão de Queijo'))];
       expect(Carrinho.buscar(lista, '7891').map((p) => p.id), [1]);
-      expect(Carrinho.buscar(lista, 'pao').map((p) => p.id), [1, 11]);
+      expect(Carrinho.buscar(lista, 'PÃO').map((p) => p.id), [1, 11]);
+      expect(Carrinho.buscar(lista, 'pao'), isEmpty, reason: 'o v1 não ignora acentos');
       expect(Carrinho.buscar(lista, 'xyz'), isEmpty);
       expect(Carrinho.buscar(lista, '  '), isEmpty);
     });

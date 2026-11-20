@@ -22,11 +22,13 @@ class Arquivo {
 }
 
 class ApiClient {
-  ApiClient({http.Client? client, this.web = kIsWeb}) : _http = client ?? http.Client();
+  ApiClient({http.Client? client, this.web = kIsWeb, this.tempoLimite = const Duration(seconds: 30)}) : _http = client ?? http.Client();
 
   final http.Client _http;
   final bool web;
-  static const _tempoLimite = Duration(seconds: 30);
+
+  /// Sem resposta nesse tempo, a operação falha com a mensagem de conexão do v1.
+  final Duration tempoLimite;
   static const _msgConexao = 'Erro de conexão com o sistema. Verifique a rede e tente novamente.';
 
   String baseUrl = '';
@@ -84,8 +86,8 @@ class ApiClient {
     try {
       final req = http.Request(metodo, uri)..headers.addAll(_cabecalhos(json: corpo != null));
       if (corpo != null) req.body = jsonEncode(corpo);
-      final enviado = await _http.send(req).timeout(_tempoLimite);
-      return await http.Response.fromStream(enviado).timeout(_tempoLimite);
+      final enviado = await _http.send(req).timeout(tempoLimite);
+      return await http.Response.fromStream(enviado).timeout(tempoLimite);
     } on TimeoutException {
       throw ApiException(_msgConexao);
     } on http.ClientException {

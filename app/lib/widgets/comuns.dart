@@ -247,9 +247,12 @@ class Cartao extends StatelessWidget {
 
 /// .figma-card-header
 class TituloCartao extends StatelessWidget {
-  const TituloCartao(this.titulo, {super.key, this.direita});
+  const TituloCartao(this.titulo, {super.key, this.direita, this.h3 = false});
   final String titulo;
   final Widget? direita;
+
+  /// O cabeçalho dos logs usa <h3> (1.17em, bold) em vez de <h2>.
+  final bool h3;
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
@@ -257,11 +260,16 @@ class TituloCartao extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Cores.bordaCartao))),
-      child: Row(children: [
-        Text(titulo, style: TextStyle(fontSize: 18.4, fontWeight: FontWeight.w900, color: Cores.preto)),
-        const SizedBox(width: 12),
-        if (direita != null) Expanded(child: Align(alignment: Alignment.centerRight, child: direita!)) else const Spacer(),
-      ]),
+      // flex com space-between: em cartão estreito o título quebra a linha em vez de vazar.
+      child: LayoutBuilder(
+        builder: (context, lim) => Row(children: [
+          Expanded(child: Text(titulo, style: TextStyle(fontSize: h3 ? 18.7 : 18.4, fontWeight: h3 ? FontWeight.w700 : FontWeight.w900, color: Cores.preto))),
+          if (direita != null) ...[
+            const SizedBox(width: 12),
+            ConstrainedBox(constraints: BoxConstraints(maxWidth: lim.maxWidth * .6), child: direita!),
+          ],
+        ]),
+      ),
     );
   }
 }
@@ -272,23 +280,50 @@ class TituloH3 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(titulo, style: TextStyle(fontSize: 18.7, fontWeight: FontWeight.w700, color: Cores.preto)),
-    );
+    // h3 do v1: 1.17em, bold e sem margem (o reset do style.css zera as margens).
+    return Text(titulo, style: TextStyle(fontSize: 18.7, fontWeight: FontWeight.w700, color: Cores.preto));
   }
 }
 
 // ---------------------------------------------------------------- botões
+/// Estado de "mouse por cima" (:hover do CSS).
+class Pairar extends StatefulWidget {
+  const Pairar({super.key, required this.builder, this.cursor = SystemMouseCursors.click});
+  final Widget Function(BuildContext context, bool sobre) builder;
+  final MouseCursor cursor;
+  @override
+  State<Pairar> createState() => _PairarState();
+}
+
+class _PairarState extends State<Pairar> {
+  bool _sobre = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        cursor: widget.cursor,
+        onEnter: (_) => setState(() => _sobre = true),
+        onExit: (_) => setState(() => _sobre = false),
+        child: widget.builder(context, _sobre),
+      );
+}
+
 enum TipoBotao { primario, secundario, sucesso, perigo }
 
 /// .btn (.btn-primary, .btn-secondary...), .btn-sm e .btn-block
 class Botao extends StatelessWidget {
-  const Botao(this.texto, this.aoClicar, {super.key, this.tipo = TipoBotao.primario, this.pequeno = false, this.bloco = false, this.selecionado});
+  const Botao(this.texto, this.aoClicar, {super.key, this.tipo = TipoBotao.primario, this.pequeno = false, this.bloco = false, this.selecionado, this.dica, this.esticado = false, this.autofoco = false});
   final String texto;
   final VoidCallback? aoClicar;
   final TipoBotao tipo;
   final bool pequeno, bloco;
+
+  /// Atributo title do v1 (dica ao parar o mouse).
+  final String? dica;
+
+  /// .btn esticado por um flex em coluna: ocupa a largura toda, com o texto à esquerda (não é .btn-block).
+  final bool esticado;
+
+  /// O v1 foca o primeiro botão dos modais de confirmação.
+  final bool autofoco;
 
   /// Equivale à classe .active do v1 (botões de filtro). Só muda a semântica; o visual segue o do v1.
   final bool? selecionado;
@@ -302,39 +337,45 @@ class Botao extends StatelessWidget {
       TipoBotao.sucesso => (Cores.sucesso, Colors.white, null),
       TipoBotao.perigo => (Cores.perigo, Colors.white, null),
     };
-    return Opacity(
-      opacity: aoClicar == null ? .55 : 1,
-      child: Semantics(
-        button: true,
-        enabled: aoClicar != null,
-        selected: selecionado,
-        label: texto,
-        excludeSemantics: true,
-        child: Material(
-          color: fundo,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: borda == null ? BorderSide.none : BorderSide(color: borda, width: Cores.altoContraste ? 2 : 1)),
-          child: InkWell(
-            onTap: aoClicar,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: pequeno ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4) : const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Row(mainAxisSize: bloco ? MainAxisSize.max : MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                Flexible(child: Text(texto, textAlign: TextAlign.center, style: TextStyle(color: frente, fontSize: pequeno ? 12 : 13.6, fontWeight: FontWeight.w700))),
-              ]),
+    final botao = Pairar(
+      cursor: aoClicar == null ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+      // .btn:hover { opacity: .9 }; desabilitado: opacity .55
+      builder: (context, sobre) => Opacity(
+        opacity: aoClicar == null ? .55 : (sobre ? .9 : 1),
+        child: Semantics(
+          button: true,
+          enabled: aoClicar != null,
+          selected: selecionado,
+          label: texto,
+          excludeSemantics: true,
+          child: Material(
+            color: fundo,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: borda == null ? BorderSide.none : BorderSide(color: borda, width: Cores.altoContraste ? 2 : 1)),
+            child: InkWell(
+              onTap: aoClicar,
+              autofocus: autofoco,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: pequeno ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4) : const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                child: Row(mainAxisSize: bloco || esticado ? MainAxisSize.max : MainAxisSize.min, mainAxisAlignment: esticado ? MainAxisAlignment.start : MainAxisAlignment.center, children: [
+                  Flexible(child: Text(texto, textAlign: esticado ? TextAlign.left : TextAlign.center, style: TextStyle(color: frente, fontSize: pequeno ? 12 : 13.6, fontWeight: FontWeight.w700))),
+                ]),
+              ),
             ),
           ),
         ),
       ),
     );
+    return dica == null ? botao : Tooltip(message: dica!, child: botao);
   }
 }
 
 enum TipoAcao { aceitar, avancar, cancelar, info, lixeira }
 
-/// .btn-icon (32x32, colorido)
+/// .btn-icon (32x32, colorido), com o mesmo caractere do v1 (✔ ➜ ✕ 👁 ✎ 🗑 ⏻ ↺).
 class BotaoIcone extends StatelessWidget {
   const BotaoIcone(this.icone, this.dica, this.aoClicar, {super.key, this.tipo = TipoAcao.info});
-  final IconData icone;
+  final String icone;
   final String dica;
   final VoidCallback? aoClicar;
   final TipoAcao tipo;
@@ -356,10 +397,23 @@ class BotaoIcone extends StatelessWidget {
           button: true,
           label: dica,
           excludeSemantics: true,
-          child: Material(
-            color: fundo,
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(onTap: aoClicar, borderRadius: BorderRadius.circular(4), child: SizedBox(width: 32, height: 32, child: Icon(icone, size: 19, color: frente))),
+          // .btn-icon:hover { transform: scale(1.1) }
+          child: Pairar(
+            builder: (context, sobre) => Transform.scale(
+              scale: sobre && aoClicar != null ? 1.1 : 1,
+              child: Opacity(
+                opacity: aoClicar == null ? .55 : 1,
+                child: Material(
+                  color: fundo,
+                  borderRadius: BorderRadius.circular(4),
+                  child: InkWell(
+                    onTap: aoClicar,
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(width: 32, height: 32, child: Center(child: Text(icone, style: TextStyle(fontSize: 16.8, height: 1, fontWeight: FontWeight.w900, color: frente)))),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -387,7 +441,7 @@ Widget seloVenda(String s) => s == 'Concluída' ? Selo.sucesso(s) : Selo.perigo(
 Widget seloAtivo(String s) => s == 'Ativo' ? Selo.sucesso(s) : Selo.perigo(s);
 
 // ---------------------------------------------------------------- formulário
-const rotuloEscuro = TextStyle(fontSize: 12, color: Color(0xFFCBD5E1), fontWeight: FontWeight.w500);
+const rotuloEscuro = TextStyle(fontSize: 12, color: Color(0xFFCBD5E1), fontWeight: FontWeight.w600);
 TextStyle _estiloRotulo(bool figma) => TextStyle(fontSize: figma ? 12.8 : 12.5, fontWeight: FontWeight.w700, color: figma ? Cores.preto : const Color(0xFF374151));
 
 /// Campo com rótulo acima (.form-group / .figma-input-group) e, se pedido, contador de caracteres.
@@ -556,11 +610,14 @@ class Marcador extends StatelessWidget {
 
 /// .inline-field com data: "De [dd/mm/aaaa]"; valor em 'AAAA-MM-DD'.
 class CampoData extends StatelessWidget {
-  const CampoData({super.key, required this.rotulo, required this.valor, required this.aoMudar, this.primeira, this.emLinha = true, this.figma = false});
+  const CampoData({super.key, required this.rotulo, required this.valor, required this.aoMudar, this.primeira, this.emLinha = true, this.figma = false, this.erro = false});
   final String rotulo, valor;
   final ValueChanged<String> aoMudar;
   final DateTime? primeira;
   final bool emLinha, figma;
+
+  /// .input-error (borda vermelha)
+  final bool erro;
 
   @override
   Widget build(BuildContext context) {
@@ -582,7 +639,7 @@ class CampoData extends StatelessWidget {
           width: emLinha ? 140 : null,
           height: 36,
           padding: const EdgeInsets.only(left: 10, right: 6),
-          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Cores.bordaInput), borderRadius: BorderRadius.circular(4)),
+          decoration: BoxDecoration(color: Colors.white, border: erro ? Border.all(color: Cores.perigo, width: 2) : Border.all(color: Cores.bordaInput), borderRadius: BorderRadius.circular(4)),
           child: Row(children: [
             Expanded(child: Text(valor.isEmpty ? 'dd/mm/aaaa' : dataBR(valor), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.6, color: Cores.texto))),
             if (valor.isNotEmpty) ...[
@@ -598,7 +655,7 @@ class CampoData extends StatelessWidget {
       return Row(mainAxisSize: MainAxisSize.min, children: [
         Text(rotulo, style: TextStyle(fontSize: 13.1, fontWeight: FontWeight.w700, color: Cores.texto)),
         const SizedBox(width: 6),
-        caixa,
+        Flexible(child: caixa),
       ]);
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
@@ -648,7 +705,7 @@ enum EstiloTabela { padrao, venda, relatorio }
 
 /// Tabela do v1 em todas as telas. Em tela estreita, rola na horizontal (como .table-responsive).
 class Tabela<T> extends StatelessWidget {
-  const Tabela({super.key, required this.itens, required this.colunas, this.aoTocar, this.selecionado, this.apagado, this.critico, this.vazio = 'Nenhum registro encontrado.', this.larguraMinima = 720, this.estilo = EstiloTabela.padrao, this.alturaMaxima, this.dica, this.respiro = 14});
+  const Tabela({super.key, required this.itens, required this.colunas, this.aoTocar, this.selecionado, this.apagado, this.critico, this.vazio = 'Nenhum registro encontrado.', this.larguraMinima = 720, this.estilo = EstiloTabela.padrao, this.alturaMaxima, this.dica, this.respiro = 14, this.vazioSimples = false});
   final List<T> itens;
   final List<Coluna<T>> colunas;
   final void Function(T)? aoTocar;
@@ -659,6 +716,9 @@ class Tabela<T> extends StatelessWidget {
   final EstiloTabela estilo;
   final double? alturaMaxima;
   final double respiro;
+
+  /// Linha vazia com style="text-align:center; padding:16px" (texto comum da célula) em vez de .empty-cell.
+  final bool vazioSimples;
 
   @override
   Widget build(BuildContext context) {
@@ -673,13 +733,13 @@ class Tabela<T> extends StatelessWidget {
               child: Padding(padding: EdgeInsets.symmetric(horizontal: respiro, vertical: vertical), child: Align(alignment: Alignment.centerLeft, child: f(col))),
             ),
         ]);
-    final corpoTexto = TextStyle(fontSize: 14.7, color: Cores.texto, fontWeight: estilo == EstiloTabela.venda ? FontWeight.w500 : FontWeight.w400);
+    final corpoTexto = TextStyle(fontSize: 14.7, color: Cores.texto, fontWeight: estilo == EstiloTabela.venda ? FontWeight.w600 : FontWeight.w400);
     final corpo = Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
       if (itens.isEmpty)
         Container(
           decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Cores.linhaTabela))),
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          child: Text(vazio, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.4, color: Cores.fraco)),
+          padding: vazioSimples ? const EdgeInsets.all(16) : const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+          child: Text(vazio, textAlign: TextAlign.center, style: vazioSimples ? TextStyle(fontSize: 14.7, color: Cores.texto) : TextStyle(fontSize: 14.4, color: Cores.fraco)),
         ),
       for (final item in itens)
         _Linha(
@@ -811,7 +871,10 @@ class Modal extends StatelessWidget {
                 button: true,
                 label: 'Fechar',
                 excludeSemantics: true,
-                child: InkWell(onTap: () => Navigator.pop(context), child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.close, size: 18, color: Color(0xFF6B7280)))),
+                child: Tooltip(
+                  message: 'Fechar',
+                  child: InkWell(onTap: () => Navigator.pop(context), child: const Text('×', style: TextStyle(fontSize: 22.4, height: 1, color: Color(0xFF6B7280)))),
+                ),
               ),
             ]),
             const SizedBox(height: 14),
@@ -836,13 +899,73 @@ class Mensagem extends StatelessWidget {
   Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(texto, style: const TextStyle(fontSize: 14.7, height: 1.45, color: Color(0xFF111827))));
 }
 
+/// Abre um modal. Os modais dinâmicos do v1 (GF.openModal) fecham com Esc e com clique fora;
+/// os estáticos do index.html (nova requisição, cancelar requisição, motivo do cancelamento e movimentação) só pelo × e pelos botões.
+Future<T?> abrirModal<T>(BuildContext context, WidgetBuilder builder, {bool estatico = false}) => showDialog<T>(context: context, barrierDismissible: !estatico, builder: builder);
+
 Future<bool> confirmar(BuildContext context, String mensagem, {String titulo = 'Confirmação', String ok = 'Confirmar', bool perigo = false}) async {
   final r = await showDialog<bool>(
     context: context,
     builder: (c) => Modal(titulo: titulo, filhos: [Mensagem(mensagem)], acoes: [
-      Botao('Cancelar', () => Navigator.pop(c, false), tipo: TipoBotao.secundario),
+      Botao('Cancelar', () => Navigator.pop(c, false), tipo: TipoBotao.secundario, autofoco: true),
       Botao(ok, () => Navigator.pop(c, true), tipo: perigo ? TipoBotao.perigo : TipoBotao.primario),
     ]),
   );
   return r == true;
+}
+
+/// Borda tracejada (border: 1px dashed), usada no quadro de autorização (.auth-box).
+class BordaTracejada extends StatelessWidget {
+  const BordaTracejada({super.key, required this.child, this.cor = const Color(0xFF9CA3AF), this.raio = 8});
+  final Widget child;
+  final Color cor;
+  final double raio;
+  @override
+  Widget build(BuildContext context) => CustomPaint(foregroundPainter: _Tracejado(cor, raio), child: child);
+}
+
+class _Tracejado extends CustomPainter {
+  _Tracejado(this.cor, this.raio);
+  final Color cor;
+  final double raio;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final caminho = Path()..addRRect(RRect.fromRectAndRadius((Offset.zero & size).deflate(.5), Radius.circular(raio)));
+    final tinta = Paint()
+      ..color = cor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (final m in caminho.computeMetrics()) {
+      for (var d = 0.0; d < m.length; d += 6) {
+        canvas.drawPath(m.extractPath(d, math.min(d + 3, m.length)), tinta);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_Tracejado antigo) => antigo.cor != cor || antigo.raio != raio;
+}
+
+/// Zoom da página inteira, como o `zoom` do CSS usado pelo A-/A+ do v1: tudo cresce junto (texto, caixas, ícones)
+/// e o layout usa a largura que sobra. As faixas de tela (MediaQuery) continuam medidas na janela, como as @media do CSS.
+class Zoom extends StatelessWidget {
+  const Zoom({super.key, required this.fator, required this.child});
+  final double fator;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    // Mesma estrutura em qualquer fator: trocar o zoom não pode recriar as telas (o que foi digitado continua).
+    return LayoutBuilder(
+      builder: (context, lim) => ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topLeft,
+          minWidth: lim.maxWidth / fator,
+          maxWidth: lim.maxWidth / fator,
+          minHeight: lim.maxHeight / fator,
+          maxHeight: lim.maxHeight / fator,
+          child: Transform.scale(scale: fator, alignment: Alignment.topLeft, child: child),
+        ),
+      ),
+    );
+  }
 }

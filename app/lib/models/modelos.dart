@@ -66,7 +66,7 @@ class Movimentacao {
         idProduto = _i(j['id_produto']),
         quantidade = numero(j['quantidade']),
         data = _s(j['data_movimentacao']),
-        observacao = _s(j['observacao']).replaceAll('→', '->'),
+        observacao = _s(j['observacao']),
         produto = _s(j['produto_nome']),
         codigo = _s(j['codigo_barras']),
         unidade = _s(j['unidade']),

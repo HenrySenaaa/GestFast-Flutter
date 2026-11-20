@@ -17,16 +17,12 @@ class AjudaTela extends StatelessWidget {
     ('Funcionários, configurações e logs', '✔', '-', '-'),
   ];
 
-  // ✔ desenhado com ícone: o caractere não existe na fonte embutida da web.
-  Widget _marca(String v) => v == '✔' ? Icon(Icons.check, size: 17, color: Cores.texto) : const Text('-');
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    Widget linha(String? r, String t) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text.rich(TextSpan(style: TextStyle(fontSize: 14.4, color: Cores.texto), children: [if (r != null) TextSpan(text: '$r ', style: const TextStyle(fontWeight: FontWeight.w700)), TextSpan(text: t)])),
-        );
+    // <p> sem classe dentro de .ajuda-details-list: 16px e sem margem entre os parágrafos.
+    Widget linha(String? r, String t) => Text.rich(TextSpan(style: TextStyle(fontSize: 16, color: Cores.texto), children: [if (r != null) TextSpan(text: '$r ', style: const TextStyle(fontWeight: FontWeight.w700)), TextSpan(text: t)]));
     return Pagina(
       cabecalho: const CabecalhoAba('Ajuda'),
       filhos: [
@@ -45,14 +41,15 @@ class AjudaTela extends StatelessWidget {
             Tabela<(String, String, String, String)>(
               itens: _perfis,
               larguraMinima: 620,
+              vazioSimples: true,
               colunas: [
                 Coluna('Área', (p) => Text(p.$1), flex: 5),
-                Coluna('Administrador', (p) => _marca(p.$2)),
-                Coluna('BackOffice', (p) => _marca(p.$3)),
-                Coluna('Funcionário', (p) => _marca(p.$4)),
+                Coluna('Administrador', (p) => Text(p.$2)),
+                Coluna('BackOffice', (p) => Text(p.$3)),
+                Coluna('Funcionário', (p) => Text(p.$4)),
               ],
             ),
-            Padding(padding: const EdgeInsets.only(top: 6, bottom: 4), child: Text('* O cancelamento de uma venda exige e-mail e senha de um Administrador ou BackOffice.', style: TextStyle(fontSize: 14.1, color: Cores.texto))),
+            Padding(padding: const EdgeInsets.only(top: 6, bottom: 10), child: Text('* O cancelamento de uma venda exige e-mail e senha de um Administrador ou BackOffice.', style: TextStyle(fontSize: 14.1, color: Cores.texto))),
           ]),
         ),
         Cartao(

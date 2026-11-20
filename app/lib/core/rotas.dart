@@ -15,6 +15,7 @@ import '../features/relatorios_tela.dart';
 import '../features/requisicoes_tela.dart';
 import '../features/vendas_tela.dart';
 import '../widgets/casca.dart';
+import '../widgets/comuns.dart';
 import 'sessao.dart';
 
 class Destino {
@@ -43,19 +44,40 @@ GoRouter criarRotas(Sessao sessao) {
   Page<void> pagina(GoRouterState s, Widget tela) => NoTransitionPage(key: ValueKey(s.uri.toString()), child: KeyedSubtree(key: ValueKey(s.uri.toString()), child: tela));
   Map<String, String> q(GoRouterState s) => s.uri.queryParameters;
 
+  // Volta para a tela pedida antes do login (endereço digitado, página recarregada ou sessão expirada), como o #hash do v1.
+  String destino() {
+    final d = sessao.destinoPosLogin;
+    sessao.destinoPosLogin = null;
+    return d ?? '/painel';
+  }
+
   return GoRouter(
     initialLocation: '/painel',
     refreshListenable: sessao,
+    // Endereço desconhecido: o v1 abria o Início.
+    onException: (_, _, router) => router.go('/painel'),
     redirect: (context, estado) {
       final local = estado.matchedLocation;
       final publica = local == '/login' || local == '/redefinir';
-      if (!sessao.iniciada) return local == '/redefinir' ? null : (local == '/carregando' ? null : '/carregando');
-      if (local == '/carregando') return sessao.logado ? '/painel' : '/login';
-      if (!sessao.logado) return publica ? null : '/login';
-      if (publica) return '/painel';
-      // Endereço digitado para uma tela sem permissão volta ao início.
+      final protegida = !publica && local != '/carregando';
+      if (!sessao.iniciada) {
+        if (local == '/redefinir') return null;
+        if (protegida) sessao.destinoPosLogin = estado.uri.toString();
+        return local == '/carregando' ? null : '/carregando';
+      }
+      if (local == '/carregando') return sessao.logado ? destino() : '/login';
+      if (!sessao.logado) {
+        if (publica) return null;
+        if (sessao.lembrarDestino) sessao.destinoPosLogin = estado.uri.toString();
+        return '/login';
+      }
+      if (publica) return destino();
+      // Tela sem permissão (endereço digitado ou link antigo): volta ao início com o aviso do v1.
       for (final d in destinos) {
-        if (d.caminho == local && d.perm != null && !sessao.pode(d.perm!)) return '/painel';
+        if (d.caminho == local && d.perm != null && !sessao.pode(d.perm!)) {
+          Future.microtask(() => avisar('Seu perfil não tem permissão para acessar esta área.', tipo: TipoAviso.erro));
+          return '/painel';
+        }
       }
       return null;
     },

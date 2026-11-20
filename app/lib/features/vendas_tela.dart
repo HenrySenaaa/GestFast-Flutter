@@ -1,4 +1,6 @@
 // Caixa (PDV): painel escuro à esquerda e pedido à direita, iguais ao v1.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,16 +19,21 @@ class VendasTela extends ConsumerStatefulWidget {
 }
 
 class _VendasTelaState extends ConsumerState<VendasTela> {
-  final _carrinho = Carrinho();
+  // No v1 a venda em andamento continuava lá ao trocar de tela e voltar: carrinho, produto, pagamento, desconto e recebido.
+  late final _m = (_s.memoria['pdv'] as Map<String, Object?>?) ?? <String, Object?>{};
+  late final Carrinho _carrinho = (_m['carrinho'] as Carrinho?) ?? Carrinho();
   List<Produto> _produtos = [];
-  int? _produto;
-  final _busca = TextEditingController(), _qtd = TextEditingController(text: '1'), _desconto = TextEditingController(text: '0'), _recebido = TextEditingController();
-  final _focoBusca = FocusNode(), _focoQtd = FocusNode(), _focoDesconto = FocusNode();
-  String _forma = 'Dinheiro', _tipoDesconto = 'valor';
-  bool _finalizando = false, _erroBusca = false, _erroQtd = false;
+  late int? _produto = _m['produto'] as int?;
+  final _busca = TextEditingController();
+  late final _qtd = TextEditingController(text: (_m['qtd'] as String?) ?? '1'),
+      _desconto = TextEditingController(text: (_m['desconto'] as String?) ?? '0'),
+      _recebido = TextEditingController(text: (_m['recebido'] as String?) ?? '');
+  final _focoBusca = FocusNode(), _focoQtd = FocusNode(), _focoDesconto = FocusNode(), _focoRecebido = FocusNode();
+  late String _forma = (_m['forma'] as String?) ?? 'Dinheiro', _tipoDesconto = (_m['tipoDesconto'] as String?) ?? 'valor';
+  bool _finalizando = false, _erroBusca = false, _erroQtd = false, _erroDesconto = false, _erroRecebido = false;
   int? _selecionado;
 
-  Sessao get _s => ref.read(sessaoProvider);
+  late final Sessao _s = ref.read(sessaoProvider);
   Produto? get _p => _produtos.where((x) => x.id == _produto).firstOrNull;
 
   @override
@@ -37,12 +44,14 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
 
   @override
   void dispose() {
+    _s.memoria['pdv'] = {'carrinho': _carrinho, 'produto': _produto, 'qtd': _qtd.text, 'desconto': _desconto.text, 'recebido': _recebido.text, 'forma': _forma, 'tipoDesconto': _tipoDesconto};
     for (final c in [_busca, _qtd, _desconto, _recebido]) {
       c.dispose();
     }
     _focoBusca.dispose();
     _focoQtd.dispose();
     _focoDesconto.dispose();
+    _focoRecebido.dispose();
     super.dispose();
   }
 
@@ -57,7 +66,16 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
     if (!mounted) return;
     setState(() {
       if (lista != null) _produtos = lista;
+      if (_p == null) _produto = null;
+      _produtoMudou();
     });
+  }
+
+  // v1 (produtoMudou): produto vendido por unidade não fica com quantidade fracionada no campo.
+  void _produtoMudou() {
+    final p = _p;
+    final q = lerNumero(_qtd.text);
+    if (p != null && !aceitaFracao(p.unidade) && (q == null || q != q.roundToDouble())) _qtd.text = '1';
   }
 
   double get _descontoValor => lerNumero(_desconto.text) ?? 0;
@@ -89,17 +107,24 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
       avisar('Selecione um produto para inserir no pedido.', tipo: TipoAviso.erro);
       return;
     }
-    final v = situacaoValidade(p.validade, _s.hoje, _s.diasValidade);
-    if (v?.vencido == true && !await confirmar(context, '"${p.nome}" está VENCIDO (validade ${dataBR(p.validade)}). Deseja adicionar ao pedido mesmo assim?', titulo: 'Produto vencido', ok: 'Adicionar mesmo assim', perigo: true)) {
-      return;
-    }
-    final erro = _carrinho.adicionar(p, lerNumero(_qtd.text));
+    // Mesma ordem do v1: quantidade, inteiro, estoque e só depois a confirmação de produto vencido.
+    final q = lerNumero(_qtd.text);
+    final erro = _carrinho.validar(p, q);
     if (erro != null) {
-      setState(() => _erroQtd = true);
+      setState(() {
+        _erroQtd = true;
+        // v1: em produto por unidade, a quantidade fracionada vira o inteiro mais próximo (mínimo 1).
+        if (q != null && q > 0 && !aceitaFracao(p.unidade) && q != q.roundToDouble()) _qtd.text = '${math.max(1, q.round())}';
+      });
       avisar(erro, tipo: TipoAviso.erro);
       _focoQtd.requestFocus();
       return;
     }
+    final v = situacaoValidade(p.validade, _s.hoje, _s.diasValidade);
+    if (v?.vencido == true && !await confirmar(context, '"${p.nome}" está VENCIDO (validade ${dataBR(p.validade)}). Deseja adicionar ao pedido mesmo assim?', titulo: 'Produto vencido', ok: 'Adicionar mesmo assim', perigo: true)) {
+      return;
+    }
+    _carrinho.adicionar(p, q);
     setState(() {
       _selecionado = null;
       _erroQtd = false;
@@ -125,6 +150,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
         _desconto.text = '0';
         _recebido.clear();
         _qtd.text = '1';
+        _erroDesconto = _erroRecebido = false;
       });
 
   Future<void> _finalizar() async {
@@ -135,6 +161,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
     final t = _totais;
     final erro = _carrinho.erroDesconto(tipoDesconto: _tipoDesconto, desconto: _descontoValor, limitePercent: _s.config?.descontoMaximo ?? 0, admin: _s.usuario?.admin == true);
     if (erro != null) {
+      setState(() => _erroDesconto = true);
       avisar(erro, tipo: TipoAviso.erro);
       _focoDesconto.requestFocus();
       return;
@@ -142,7 +169,9 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
     final emDinheiro = _forma == 'Dinheiro';
     final rec = _recebidoValor;
     if (emDinheiro && _recebido.text.trim().isNotEmpty && (rec == null || rec < t.total)) {
+      setState(() => _erroRecebido = true);
       avisar('O valor recebido é menor que o total da venda.', tipo: TipoAviso.erro);
+      _focoRecebido.requestFocus();
       return;
     }
     setState(() => _finalizando = true);
@@ -161,27 +190,32 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
     avisar('${r['message']} • ${v.codigo} • ${dinheiro(v.total)}${(v.troco ?? 0) > 0 ? ' • Troco ${dinheiro(v.troco)}' : ''}', tipo: TipoAviso.sucesso);
     _limparVenda();
     await _carregarProdutos();
-    if (mounted) _focoBusca.requestFocus();
   }
 
   // ---------------------------------------------------------- painel escuro
-  Widget _botaoEscuro(String t, VoidCallback f, {bool ativo = false}) => Semantics(
-        button: true,
-        label: t,
-        excludeSemantics: true,
-        child: InkWell(
+  // .venda-dark-btn (:hover e .active: fundo #2d343c e borda #60a5fa)
+  Widget _botaoEscuro(String t, VoidCallback f, {bool ativo = false, String? dica}) {
+    final botao = Semantics(
+      button: true,
+      label: t,
+      excludeSemantics: true,
+      child: Pairar(
+        builder: (context, sobre) => GestureDetector(
           onTap: f,
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: ativo ? Cores.escuroCampo : Colors.transparent,
-              border: Border.all(color: ativo ? const Color(0xFF60A5FA) : Cores.escuroBorda),
+              color: ativo || sobre ? Cores.escuroCampo : Colors.transparent,
+              border: Border.all(color: ativo || sobre ? const Color(0xFF60A5FA) : Cores.escuroBorda),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(t, style: const TextStyle(color: Colors.white, fontSize: 15.2, fontWeight: FontWeight.w700)),
           ),
         ),
-      );
+      ),
+    );
+    return dica == null ? botao : Tooltip(message: dica, child: botao);
+  }
 
   Widget _caixaViva(String rotulo, String valor, {bool baixo = false}) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(rotulo, style: rotuloEscuro),
@@ -212,7 +246,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _botaoEscuro('Adicionar Item', () => _focoBusca.requestFocus(), ativo: true),
         const SizedBox(height: 10),
-        _botaoEscuro('Remover Item', _remover),
+        _botaoEscuro('Remover Item', _remover, dica: 'Remove o item selecionado na lista (ou o último adicionado)'),
         const SizedBox(height: 10),
         _botaoEscuro('Aplicar Desconto', () {
           _focoDesconto.requestFocus();
@@ -231,7 +265,10 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
             const DropdownMenuItem(value: null, child: Text('Selecione...')),
             for (final x in _produtos) DropdownMenuItem(value: x.id, enabled: x.estoque > 0, child: Text('${x.nome} - ${dinheiro(x.venda)}/${x.unidade}', overflow: TextOverflow.ellipsis, style: x.estoque > 0 ? null : const TextStyle(color: Color(0xFF9CA3AF)))),
           ],
-          aoMudar: (v) => setState(() => _produto = v),
+          aoMudar: (v) => setState(() {
+            _produto = v;
+            _produtoMudou();
+          }),
         ),
         g,
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -248,7 +285,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
               const Text('Desconto:', style: rotuloEscuro),
               const SizedBox(height: 3),
               Row(children: [
-                Expanded(child: Campo(_desconto, 'Desconto', semRotulo: true, escuro: true, numerico: true, foco: _focoDesconto, aoMudar: (_) => setState(() {}))),
+                Expanded(child: Campo(_desconto, 'Desconto', semRotulo: true, escuro: true, numerico: true, foco: _focoDesconto, erro: _erroDesconto, aoMudar: (_) => setState(() => _erroDesconto = false))),
                 const SizedBox(width: 4),
                 SizedBox(
                   width: 58,
@@ -268,28 +305,27 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
         if (emDinheiro) ...[
           g,
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Campo(_recebido, 'Valor recebido R\$:', escuro: true, dica: 'opcional', numerico: true, aoMudar: (_) => setState(() {}))),
+            Expanded(child: Campo(_recebido, 'Valor recebido R\$:', escuro: true, dica: 'opcional', numerico: true, foco: _focoRecebido, erro: _erroRecebido, aoMudar: (_) => setState(() => _erroRecebido = false))),
             const SizedBox(width: 8),
             Expanded(child: _caixaViva('Troco:', troco == null ? '--' : (troco >= 0 ? dinheiro(troco) : 'insuficiente'), baixo: troco != null && troco < 0)),
           ]),
         ],
         const SizedBox(height: 12),
+        // .btn-figma-add (hover #1d4ed8)
         Semantics(
           button: true,
-          label: 'Inserir no Pedido',
+          label: '➕ Inserir no Pedido',
           excludeSemantics: true,
-          child: Material(
-            color: Cores.primaria,
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(
-              onTap: _adicionar,
-              child: const Padding(
-                padding: EdgeInsets.all(10),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.add, size: 17, color: Color(0xFFEC4899)),
-                  SizedBox(width: 4),
-                  Flexible(child: Text('Inserir no Pedido', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14.4))),
-                ]),
+          child: Pairar(
+            builder: (context, sobre) => Material(
+              color: sobre ? const Color(0xFF1D4ED8) : Cores.primaria,
+              borderRadius: BorderRadius.circular(4),
+              child: InkWell(
+                onTap: _adicionar,
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text('➕ Inserir no Pedido', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14.4)),
+                ),
               ),
             ),
           ),
@@ -333,7 +369,7 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
         Coluna('Valor', (i) => Text(num2(i.preco))),
         Coluna('Quant.', (i) => Text('${quantidade(i.qtd)} ${i.unidade}')),
         Coluna('Total', (i) => Text(num2(i.subtotal))),
-        Coluna('Remover', (i) => BotaoIcone(Icons.delete_outline, 'Remover ${i.nome}', () => setState(() {
+        Coluna('Remover', (i) => BotaoIcone('🗑', 'Remover item', () => setState(() {
               _carrinho.itens.remove(i);
               _selecionado = null;
             }), tipo: TipoAcao.cancelar)),
@@ -357,16 +393,22 @@ class _VendasTelaState extends ConsumerState<VendasTela> {
             Text(num2(t.total), style: const TextStyle(fontSize: 28.8, fontWeight: FontWeight.w900, color: Colors.black)),
           ]),
         ),
+        // .btn-finalizar-checkout (hover #15803d)
         Semantics(
           button: true,
           label: 'Finalizar Venda & Baixar Estoque',
           excludeSemantics: true,
-          child: Material(
-            color: Cores.sucesso,
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(
-              onTap: _finalizando ? null : _finalizar,
-              child: const Padding(padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10), child: Text('Finalizar Venda & Baixar Estoque', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
+          child: Pairar(
+            builder: (context, sobre) => Opacity(
+              opacity: _finalizando ? .55 : 1,
+              child: Material(
+                color: sobre ? const Color(0xFF15803D) : Cores.sucesso,
+                borderRadius: BorderRadius.circular(4),
+                child: InkWell(
+                  onTap: _finalizando ? null : _finalizar,
+                  child: const Padding(padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10), child: Text('Finalizar Venda & Baixar Estoque', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
+                ),
+              ),
             ),
           ),
         ),

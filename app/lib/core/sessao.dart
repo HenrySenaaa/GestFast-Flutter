@@ -47,6 +47,15 @@ class Sessao extends ChangeNotifier {
   List<Categoria> categorias = [];
   String? avisoLogin;
 
+  /// Estado das telas que o v1 mantinha ao trocar de tela (o DOM e as variáveis de cada módulo continuavam vivos):
+  /// carrinho do caixa, filtros, período dos relatórios, produto em edição... Limpo ao sair.
+  final Map<String, Object?> memoria = {};
+
+  /// Tela aberta quando a sessão expirou: depois do novo login o v1 voltava para ela (o #hash continuava na barra).
+  /// Sair pelo menu limpa o #hash no v1, então aí o próximo login começa no Início.
+  String? destinoPosLogin;
+  bool lembrarDestino = true;
+
   double zoom = 1;
   bool altoContraste = false;
   String servidor = '';
@@ -111,6 +120,13 @@ class Sessao extends ChangeNotifier {
     if (me['settings'] is Map) config = Configuracoes.deJson(Json.from(me['settings'] as Map));
     if (me['hoje'] != null) hoje = me['hoje'].toString();
     avisoLogin = null;
+    lembrarDestino = true;
+    // Depois de uma sessão expirada, o mesmo usuário reencontra a tela como deixou (como no v1); outro usuário começa do zero.
+    if (memoria['_dono'] != usuario!.id) {
+      memoria
+        ..clear()
+        ..['_dono'] = usuario!.id;
+    }
   }
 
   Future<void> carregarCategorias() async {
@@ -150,6 +166,9 @@ class Sessao extends ChangeNotifier {
     } catch (_) {
       // Sessão já expirada ou servidor fora do ar: encerra no aparelho do mesmo jeito.
     }
+    destinoPosLogin = null;
+    lembrarDestino = false;
+    memoria.clear();
     encerrarLocal();
   }
 

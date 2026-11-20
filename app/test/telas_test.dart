@@ -110,7 +110,7 @@ void main() {
       await t.testTextInput.receiveAction(TextInputAction.done);
       await t.pump();
       if (qtd != null) await t.enterText(campoRotulado('Quant.:'), qtd);
-      await t.tap(find.text('Inserir no Pedido'));
+      await t.tap(find.text('➕ Inserir no Pedido'));
       await t.pumpAndSettle();
     }
 

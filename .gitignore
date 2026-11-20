@@ -5,3 +5,4 @@ data/
 *.log
 *.log.1
 .DS_Store
+.dart_tool/
